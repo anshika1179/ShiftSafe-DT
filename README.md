@@ -111,7 +111,28 @@ Gig workers operate on weekly cash flows. ShiftSafe-DT aligns with their financi
 
 ---
 
-## 🔗 8. Phase 1 Deliverables Links
+## � 8. UI Prototype — High-Fidelity Screens
+
+> *Mobile-first, dark-mode design built for real delivery partners. Every screen is crafted to be intuitive, fast, and actionable.*
+
+<div align="center">
+
+| 🔐 Frictionless Signup | 🛡️ Live Dashboard | 📋 Claim Status |
+|:---:|:---:|:---:|
+| <img src="assets/screenshots/signup.jpg" width="220" alt="Signup Screen"/> | <img src="assets/screenshots/dashboard.jpg" width="220" alt="Dashboard Screen"/> | <img src="assets/screenshots/claim-status.jpg" width="220" alt="Claim Status Screen"/> |
+| **1-minute onboarding** via mobile OTP — Zero paperwork, instant verification. | **Active Coverage + Zone Risk** visualized in real-time. Protected earnings & pending claims at a glance. | **Push notification history** showing automated payout trail — Heavy Rain → ₹100 Credited instantly. |
+
+</div>
+
+**Design Principles:**
+- 🌑 **Dark Mode First** — Optimized for outdoor use in low-light conditions
+- ⚡ **Zero-Touch UX** — Riders are notified & paid without opening the app
+- 📊 **Risk-Aware Dashboard** — Live zone risk radar with moderate/high/severe indicators
+- 🔔 **Transparent Claim Trail** — Every automated payout logged with Claim ID for trust
+
+---
+
+## �🔗 9. Phase 1 Deliverables Links
 
 *   **GitHub Repository:** [https://github.com/anshika1179/ShiftSafe-DT](https://github.com/anshika1179/ShiftSafe-DT)
 *   **Phase 1 Strategy & Prototype Video:** [▶️ Watch Demo](https://youtu.be/Dlwt3ch3y5A) *(Focus: Showing the end-to-end automated claim flow)*
