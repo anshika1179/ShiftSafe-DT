@@ -119,7 +119,7 @@ Gig workers operate on weekly cash flows. ShiftSafe-DT aligns with their financi
 
 | 🔐 Frictionless Signup | 🛡️ Live Dashboard | 📋 Claim Status |
 |:---:|:---:|:---:|
-| <img src="assets/screenshots/signup.jpg" width="220" alt="Signup Screen"/> | <img src="assets/screenshots/dashboard.jpg" width="220" alt="Dashboard Screen"/> | <img src="assets/screenshots/claim-status.jpg" width="220" alt="Claim Status Screen"/> |
+| <img src="https://raw.githubusercontent.com/atul-upadhyay-7/ShiftSafe-DT/main/assets/screenshots/signup.jpg" width="220" alt="Signup Screen"/> | <img src="https://raw.githubusercontent.com/atul-upadhyay-7/ShiftSafe-DT/main/assets/screenshots/dashboard.jpg" width="220" alt="Dashboard Screen"/> | <img src="https://raw.githubusercontent.com/atul-upadhyay-7/ShiftSafe-DT/main/assets/screenshots/claim-status.jpg" width="220" alt="Claim Status Screen"/> |
 | **1-minute onboarding** via mobile OTP — Zero paperwork, instant verification. | **Active Coverage + Zone Risk** visualized in real-time. Protected earnings & pending claims at a glance. | **Push notification history** showing automated payout trail — Heavy Rain → ₹100 Credited instantly. |
 
 </div>
