@@ -17,19 +17,7 @@ updates:
       prefix: "deps"
       include: "scope"
 
-  # Python dependencies
-  - package-ecosystem: pip
-    directory: /ai-engine
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "python"
-      - "automated"
-    commit-message:
-      prefix: "deps(python)"
+
 
   # GitHub Actions
   - package-ecosystem: github-actions
