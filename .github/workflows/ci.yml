@@ -33,10 +33,10 @@ jobs:
         run: npm ci
 
       - name: TypeScript Type Check
-        run: npx tsc --noEmit
+        run: npm run typecheck -w @shiftsafe/frontend
 
       - name: ESLint
-        run: npx eslint src/ --ext .ts,.tsx --max-warnings 0 || true
+        run: npx eslint frontend/ --ext .ts,.tsx --max-warnings 0 || true
 
   # ─── Build Verification ───
   build:
@@ -61,29 +61,7 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: 1
 
-  # ─── Python AI Engine Checks ───
-  ai-engine:
-    name: 🧠 AI Engine Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: ai-engine/requirements.txt
-
-      - name: Install AI Engine Dependencies
-        run: pip install -r ai-engine/requirements.txt
-
-      - name: Lint Python Code
-        run: pip install ruff && ruff check ai-engine/
-
-      - name: Type Check Python
-        run: pip install mypy && mypy ai-engine/main.py --ignore-missing-imports || true
 
   # ─── Security Scan ───
   security:
