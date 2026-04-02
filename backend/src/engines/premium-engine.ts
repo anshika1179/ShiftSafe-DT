@@ -1,7 +1,7 @@
 /*
  * Premium Pricing Engine v3.0
  *
- * Implements the exact formula from DevTrails coffee chat:
+ * Implements the exact formula from Syntax Brain Error coffee chat:
  *   Base Premium = (trigger_probability) × (avg_income_lost_per_day) × (days_exposed)
  *   Adjust for: city tier, peril type, worker activity tier
  *

@@ -811,7 +811,7 @@ Costs:
 <div align="center">
   <i>Built to solve, not just to show. Zero-touch protection for the gig economy.</i>
   <br/><br/>
-  <b>Team DevTrails</b> · Hackathon Phase 2 Final Submission
+  <b>Team Syntax Brain Error</b> · Hackathon Phase 2 Final Submission
   <br/><br/>
   
   ```
