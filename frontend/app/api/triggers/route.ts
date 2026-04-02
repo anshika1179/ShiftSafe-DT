@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     // Log trigger events
     const db = getDb();
     for (const t of [weather, pollution, platform]) {
-      db.prepare(`INSERT INTO trigger_events (id, event_type, zone, severity, raw_data, source, is_processed)
+      await db.prepare(`INSERT INTO trigger_events (id, event_type, zone, severity, raw_data, source, is_processed)
         VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
         crypto.randomUUID(), t.type, zone || 'Andheri West', t.severity,
         JSON.stringify(t.rawData), t.sourceApi, t.triggered ? 1 : 0

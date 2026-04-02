@@ -73,13 +73,13 @@ export async function GET(req: NextRequest) {
   const db = getDb();
   const workerId = req.nextUrl.searchParams.get('workerId');
 
-  const totalWorkers = (db.prepare('SELECT COUNT(*) as cnt FROM workers WHERE is_active = 1').get() as CountRow).cnt;
-  const activePolicies = (db.prepare('SELECT COUNT(*) as cnt FROM policies WHERE status = ?').get('active') as CountRow).cnt;
-  const totalClaims = (db.prepare('SELECT COUNT(*) as cnt FROM claims').get() as CountRow).cnt;
-  const totalPayouts = (db.prepare("SELECT COALESCE(SUM(amount), 0) as total FROM claims WHERE status IN ('auto_approved', 'paid')").get() as SumRow).total;
-  const weeklyPremiumsCollected = (db.prepare('SELECT COALESCE(SUM(weekly_premium), 0) as total FROM policies WHERE status = ?').get('active') as SumRow).total;
-  const optedOutWorkers = (db.prepare('SELECT COUNT(*) as cnt FROM workers WHERE insurance_opted_out = 1').get() as CountRow).cnt;
-  const ineligibleWorkers = (db.prepare('SELECT COUNT(*) as cnt FROM workers WHERE active_delivery_days < 7 AND insurance_opted_out = 0').get() as CountRow).cnt;
+  const totalWorkers = (await db.prepare('SELECT COUNT(*) as cnt FROM workers WHERE is_active = 1').get() as CountRow).cnt;
+  const activePolicies = (await db.prepare('SELECT COUNT(*) as cnt FROM policies WHERE status = ?').get('active') as CountRow).cnt;
+  const totalClaims = (await db.prepare('SELECT COUNT(*) as cnt FROM claims').get() as CountRow).cnt;
+  const totalPayouts = (await db.prepare("SELECT COALESCE(SUM(amount), 0) as total FROM claims WHERE status IN ('auto_approved', 'paid')").get() as SumRow).total;
+  const weeklyPremiumsCollected = (await db.prepare('SELECT COALESCE(SUM(weekly_premium), 0) as total FROM policies WHERE status = ?').get('active') as SumRow).total;
+  const optedOutWorkers = (await db.prepare('SELECT COUNT(*) as cnt FROM workers WHERE insurance_opted_out = 1').get() as CountRow).cnt;
+  const ineligibleWorkers = (await db.prepare('SELECT COUNT(*) as cnt FROM workers WHERE active_delivery_days < 7 AND insurance_opted_out = 0').get() as CountRow).cnt;
 
   // BCR and actuarial snapshot
   const actuarialSnapshot = getActuarialSnapshot(
@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
   );
 
   // Recent claims with settlement info
-  const recentClaims = db.prepare(`
+  const recentClaims = await db.prepare(`
     SELECT c.*, s.channel as settlement_channel, s.transaction_ref, s.status as settlement_status 
     FROM claims c 
     LEFT JOIN settlements s ON s.claim_id = c.id 
@@ -95,22 +95,22 @@ export async function GET(req: NextRequest) {
   `).all();
 
   // Claims by type
-  const claimsByType = db.prepare(`
+  const claimsByType = await db.prepare(`
     SELECT trigger_type, COUNT(*) as count, SUM(amount) as total_amount
     FROM claims GROUP BY trigger_type ORDER BY count DESC
   `).all();
 
   // Recent trigger events
-  const recentTriggers = db.prepare('SELECT * FROM trigger_events ORDER BY detected_at DESC LIMIT 10').all();
+  const recentTriggers = await db.prepare('SELECT * FROM trigger_events ORDER BY detected_at DESC LIMIT 10').all();
 
   // City pool breakdown
-  const cityPools = db.prepare(`
+  const cityPools = await db.prepare(`
     SELECT city_pool, COUNT(*) as count, SUM(weekly_premium) as total_premium
     FROM policies WHERE status = 'active' GROUP BY city_pool
   `).all();
 
   // Premium tier breakdown
-  const premiumTiers = db.prepare(`
+  const premiumTiers = await db.prepare(`
     SELECT premium_tier, COUNT(*) as count, SUM(weekly_premium) as total_premium
     FROM policies WHERE status = 'active' GROUP BY premium_tier
   `).all();
@@ -118,7 +118,7 @@ export async function GET(req: NextRequest) {
   // historical weather recommendations based on city
   let workerCity = 'Mumbai';
   if (workerId) {
-    const w = db.prepare('SELECT city FROM workers WHERE id = ?').get(workerId) as { city: string } | undefined;
+    const w = await db.prepare('SELECT city FROM workers WHERE id = ?').get(workerId) as { city: string } | undefined;
     if (w) workerCity = w.city;
   }
   const weatherRecommendations = getWeatherRecommendations(workerCity);

@@ -27,9 +27,9 @@ export async function GET(req: NextRequest) {
 
   let rows: ClaimRow[];
   if (workerId) {
-    rows = db.prepare('SELECT * FROM claims WHERE worker_id = ? ORDER BY created_at DESC').all(workerId) as ClaimRow[];
+    rows = await db.prepare('SELECT * FROM claims WHERE worker_id = ? ORDER BY created_at DESC').all(workerId) as ClaimRow[];
   } else {
-    rows = db.prepare('SELECT * FROM claims ORDER BY created_at DESC LIMIT 100').all() as ClaimRow[];
+    rows = await db.prepare('SELECT * FROM claims ORDER BY created_at DESC LIMIT 100').all() as ClaimRow[];
   }
 
   return NextResponse.json({ claims: rows });
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     const db = getDb();
 
     // Get active policy for this worker
-    const policy = db.prepare(
+    const policy = await db.prepare(
       'SELECT id, max_coverage_per_week, max_payout_percent, weekly_premium FROM policies WHERE worker_id = ? AND status = ? LIMIT 1'
     ).get(workerId, 'active') as { id: string; max_coverage_per_week: number; max_payout_percent: number; weekly_premium: number } | undefined;
 
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Get worker info
-    const worker = db.prepare('SELECT avg_weekly_income, insurance_opted_out FROM workers WHERE id = ?')
+    const worker = await db.prepare('SELECT avg_weekly_income, insurance_opted_out FROM workers WHERE id = ?')
       .get(workerId) as { avg_weekly_income: number; insurance_opted_out: number } | undefined;
 
     if (!worker || worker.insurance_opted_out) {
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Check weekly claim limit
-    const weekClaims = db.prepare(
+    const weekClaims = await db.prepare(
       `SELECT COALESCE(SUM(amount), 0) as total FROM claims 
        WHERE worker_id = ? AND created_at >= datetime('now', '-7 days')`
     ).get(workerId) as { total: number };
@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
     });
 
     // Save claim
-    db.prepare(`INSERT INTO claims (id, policy_id, worker_id, trigger_type, trigger_description, amount, status, zone, payout_method, payout_channel, settlement_status, evidence_data, processed_at)
+    await db.prepare(`INSERT INTO claims (id, policy_id, worker_id, trigger_type, trigger_description, amount, status, zone, payout_method, payout_channel, settlement_status, evidence_data, processed_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`).run(
       claimId, policy.id, workerId, triggerType, description,
       settlement.cappedAmount,
@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
     );
 
     // Save settlement record
-    db.prepare(`INSERT INTO settlements (id, claim_id, worker_id, amount, channel, upi_id, status, completed_at, transaction_ref)
+    await db.prepare(`INSERT INTO settlements (id, claim_id, worker_id, amount, channel, upi_id, status, completed_at, transaction_ref)
       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)`).run(
       settlement.settlementId, claimId, workerId,
       settlement.cappedAmount, settlement.channel,

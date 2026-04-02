@@ -30,9 +30,9 @@ export async function GET(req: NextRequest) {
 
   let rows: PolicyRow[];
   if (workerId) {
-    rows = db.prepare('SELECT * FROM policies WHERE worker_id = ? ORDER BY created_at DESC').all(workerId) as PolicyRow[];
+    rows = await db.prepare('SELECT * FROM policies WHERE worker_id = ? ORDER BY created_at DESC').all(workerId) as PolicyRow[];
   } else {
-    rows = db.prepare('SELECT * FROM policies ORDER BY created_at DESC LIMIT 50').all() as PolicyRow[];
+    rows = await db.prepare('SELECT * FROM policies ORDER BY created_at DESC LIMIT 50').all() as PolicyRow[];
   }
 
   const policies = rows.map((r) => ({
@@ -60,7 +60,7 @@ export async function PATCH(req: NextRequest) {
 
     // cancel / opt-out action
     if (action === 'cancel' || action === 'opt_out') {
-      const stmt = db.prepare('UPDATE policies SET status = ?, auto_renew = 0, end_date = date(\'now\') WHERE id = ?');
+      const stmt = await db.prepare('UPDATE policies SET status = ?, auto_renew = 0, end_date = date(\'now\') WHERE id = ?');
       const result = stmt.run('cancelled', policyId);
 
       if (result.changes === 0) {
@@ -68,9 +68,9 @@ export async function PATCH(req: NextRequest) {
       }
 
       // Also mark worker as opted out
-      const policy = db.prepare('SELECT worker_id FROM policies WHERE id = ?').get(policyId) as { worker_id: string } | undefined;
+      const policy = await db.prepare('SELECT worker_id FROM policies WHERE id = ?').get(policyId) as { worker_id: string } | undefined;
       if (policy) {
-        db.prepare('UPDATE workers SET insurance_opted_out = 1 WHERE id = ?').run(policy.worker_id);
+        await db.prepare('UPDATE workers SET insurance_opted_out = 1 WHERE id = ?').run(policy.worker_id);
       }
 
       return NextResponse.json({
@@ -83,16 +83,16 @@ export async function PATCH(req: NextRequest) {
 
     // re-activate action
     if (action === 'reactivate') {
-      const stmt = db.prepare('UPDATE policies SET status = ?, auto_renew = 1, end_date = NULL WHERE id = ?');
+      const stmt = await db.prepare('UPDATE policies SET status = ?, auto_renew = 1, end_date = NULL WHERE id = ?');
       const result = stmt.run('active', policyId);
 
       if (result.changes === 0) {
         return NextResponse.json({ error: 'Policy not found' }, { status: 404 });
       }
 
-      const policy = db.prepare('SELECT worker_id FROM policies WHERE id = ?').get(policyId) as { worker_id: string } | undefined;
+      const policy = await db.prepare('SELECT worker_id FROM policies WHERE id = ?').get(policyId) as { worker_id: string } | undefined;
       if (policy) {
-        db.prepare('UPDATE workers SET insurance_opted_out = 0 WHERE id = ?').run(policy.worker_id);
+        await db.prepare('UPDATE workers SET insurance_opted_out = 0 WHERE id = ?').run(policy.worker_id);
       }
 
       return NextResponse.json({
@@ -105,7 +105,7 @@ export async function PATCH(req: NextRequest) {
 
     // toggle auto-renew
     if (autoRenew !== undefined) {
-      const stmt = db.prepare('UPDATE policies SET auto_renew = ? WHERE id = ?');
+      const stmt = await db.prepare('UPDATE policies SET auto_renew = ? WHERE id = ?');
       const result = stmt.run(autoRenew ? 1 : 0, policyId);
 
       if (result.changes === 0) {

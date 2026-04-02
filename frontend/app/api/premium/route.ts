@@ -29,11 +29,11 @@ export async function GET(req: NextRequest) {
 
   if (workerId) {
     const db = getDb();
-    const row = db.prepare('SELECT COUNT(*) as cnt FROM claims WHERE worker_id = ?').get(workerId) as { cnt: number } | undefined;
+    const row = await db.prepare('SELECT COUNT(*) as cnt FROM claims WHERE worker_id = ?').get(workerId) as { cnt: number } | undefined;
     pastClaims = row?.cnt || 0;
 
     // Get worker details for accurate pricing
-    const worker = db.prepare('SELECT avg_weekly_income, city, zone, days_worked_this_week, active_delivery_days, platform FROM workers WHERE id = ?')
+    const worker = await db.prepare('SELECT avg_weekly_income, city, zone, days_worked_this_week, active_delivery_days, platform FROM workers WHERE id = ?')
       .get(workerId) as WorkerRow | undefined;
     if (worker) {
       workerCity = worker.city;

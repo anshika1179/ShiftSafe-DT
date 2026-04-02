@@ -15,7 +15,7 @@ export async function GET(req: Request) {
     console.log('[CRON] Starting Global Zero-Touch Automation Engine...');
 
     // 1. Fetch all unique active zones where riders are operating today
-    const zonesQuery = db.prepare(`
+    const zonesQuery = await db.prepare(`
       SELECT DISTINCT zone 
       FROM workers w
       JOIN policies p ON w.id = p.worker_id
@@ -49,7 +49,7 @@ export async function GET(req: Request) {
         }
 
         // 4. Find all active policies in this specific disaster zone
-        const affectedWorkers = db.prepare(`
+        const affectedWorkers = await db.prepare(`
           SELECT w.id as workerId, p.id as policyId, p.max_coverage_per_week, w.avg_weekly_income 
           FROM workers w
           JOIN policies p ON w.id = p.worker_id
@@ -61,7 +61,7 @@ export async function GET(req: Request) {
           for (const trigger of activeTriggers) {
             
             // Check if claim for same event already happened today
-            const todayClaims = db.prepare(`
+            const todayClaims = await db.prepare(`
               SELECT COUNT(*) as cnt FROM claims 
               WHERE worker_id = ? AND trigger_type = ? AND created_at >= date('now')
             `).get(worker.workerId, trigger.type) as { cnt: number };
@@ -72,7 +72,7 @@ export async function GET(req: Request) {
             }
 
             // Check weekly claim limit
-            const weekClaims = db.prepare(`
+            const weekClaims = await db.prepare(`
                SELECT COALESCE(SUM(amount), 0) as total FROM claims 
                WHERE worker_id = ? AND created_at >= datetime('now', '-7 days')
             `).get(worker.workerId) as { total: number };
@@ -84,7 +84,7 @@ export async function GET(req: Request) {
 
             // (Mocking the payout creation loop natively without hitting our own API via fetch)
             try {
-              db.prepare(`
+              await db.prepare(`
                 INSERT INTO claims (id, policy_id, worker_id, trigger_type, trigger_description, amount, status, zone, payout_method)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
               `).run(

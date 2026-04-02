@@ -16,19 +16,19 @@ export async function GET() {
   const db = getDb();
 
   // Current totals
-  const totalPremium = (db.prepare(
+  const totalPremium = (await db.prepare(
     'SELECT COALESCE(SUM(weekly_premium), 0) as total FROM policies WHERE status = ?'
   ).get('active') as SumRow).total;
 
-  const totalClaims = (db.prepare(
+  const totalClaims = (await db.prepare(
     "SELECT COALESCE(SUM(amount), 0) as total FROM claims WHERE status IN ('auto_approved', 'paid')"
   ).get() as SumRow).total;
 
-  const activePolicies = (db.prepare(
+  const activePolicies = (await db.prepare(
     'SELECT COUNT(*) as cnt FROM policies WHERE status = ?'
   ).get('active') as CountRow).cnt;
 
-  const totalWorkers = (db.prepare(
+  const totalWorkers = (await db.prepare(
     'SELECT COUNT(*) as cnt FROM workers WHERE is_active = 1'
   ).get() as CountRow).cnt;
 
@@ -38,12 +38,12 @@ export async function GET() {
   );
 
   // Historical weekly metrics
-  const weeklyMetrics = db.prepare(
+  const weeklyMetrics = await db.prepare(
     'SELECT * FROM actuarial_metrics ORDER BY period_start DESC LIMIT 12'
   ).all();
 
   // Stress scenarios
-  const stressScenarios = db.prepare(
+  const stressScenarios = await db.prepare(
     'SELECT * FROM stress_scenarios ORDER BY created_at DESC'
   ).all();
 
@@ -69,11 +69,11 @@ export async function POST(req: NextRequest) {
     const { scenario, durationDays, triggerFrequency, avgDailyPayout } = body;
 
     const db = getDb();
-    const activePolicies = (db.prepare(
+    const activePolicies = (await db.prepare(
       'SELECT COUNT(*) as cnt FROM policies WHERE status = ?'
     ).get('active') as CountRow).cnt;
 
-    const totalPremium = (db.prepare(
+    const totalPremium = (await db.prepare(
       'SELECT COALESCE(SUM(weekly_premium), 0) as total FROM policies WHERE status = ?'
     ).get('active') as SumRow).total;
 
@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Save to database
-    db.prepare(`INSERT INTO stress_scenarios (id, scenario_name, scenario_type, duration_days, trigger_frequency, avg_payout_per_day, total_estimated_payout, total_premium_in_period, bcr_under_stress, loss_ratio_under_stress, is_sustainable, recommendation)
+    await db.prepare(`INSERT INTO stress_scenarios (id, scenario_name, scenario_type, duration_days, trigger_frequency, avg_payout_per_day, total_estimated_payout, total_premium_in_period, bcr_under_stress, loss_ratio_under_stress, is_sustainable, recommendation)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       `STRESS-${Date.now()}`, result.scenarioName, result.scenarioType,
       result.durationDays, result.triggerFrequency, result.avgPayoutPerTriggerDay,

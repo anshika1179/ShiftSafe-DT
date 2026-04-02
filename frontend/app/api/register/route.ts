@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     const db = getDb();
 
     // make sure this phone number isn't already taken
-    const existing = db.prepare('SELECT id FROM workers WHERE phone = ?').get(sanitizedPhone);
+    const existing = await db.prepare('SELECT id FROM workers WHERE phone = ?').get(sanitizedPhone);
     if (existing) {
       return NextResponse.json({ error: 'Phone number already registered' }, { status: 409 });
     }
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
     });
 
     // save the worker record
-    db.prepare(`INSERT INTO workers (id, name, phone, email, platform, city, zone, shift_type, avg_weekly_income, vehicle_type, insurance_opted_out, active_delivery_days, days_worked_this_week, activity_tier)
+    await db.prepare(`INSERT INTO workers (id, name, phone, email, platform, city, zone, shift_type, avg_weekly_income, vehicle_type, insurance_opted_out, active_delivery_days, days_worked_this_week, activity_tier)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       workerId, sanitizedName, sanitizedPhone, email || null,
       safePlatform, safeCity, safeZone,
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
     );
 
     // create their first active policy with fixed tier
-    db.prepare(`INSERT INTO policies (id, worker_id, plan_name, premium_tier, weekly_premium, max_coverage_per_week, max_payout_percent, status, city_pool)
+    await db.prepare(`INSERT INTO policies (id, worker_id, plan_name, premium_tier, weekly_premium, max_coverage_per_week, max_payout_percent, status, city_pool)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       policyId, workerId, premium.premiumTierName, premium.activityTier,
       premium.weeklyPremium, premium.maxPayoutPerWeek, 50.0,
@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
     );
 
     // save the full calculation for audit trail
-    db.prepare(`INSERT INTO premium_calculations (id, worker_id, base_premium, zone_risk_factor, weather_risk_factor, historical_claim_factor, platform_risk_factor, final_premium, factors_json)
+    await db.prepare(`INSERT INTO premium_calculations (id, worker_id, base_premium, zone_risk_factor, weather_risk_factor, historical_claim_factor, platform_risk_factor, final_premium, factors_json)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       crypto.randomUUID(), workerId, premium.basePremium,
       premium.factors.baseZoneRisk, premium.mlMetrics.weatherRiskVolatility,
@@ -129,7 +129,7 @@ export async function POST(req: NextRequest) {
     // Log weekly activity
     const weekStart = new Date();
     weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-    db.prepare(`INSERT INTO weekly_activity_log (id, worker_id, week_start, days_active, total_deliveries, total_earnings, is_eligible)
+    await db.prepare(`INSERT INTO weekly_activity_log (id, worker_id, week_start, days_active, total_deliveries, total_earnings, is_eligible)
       VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
       crypto.randomUUID(), workerId, weekStart.toISOString().split('T')[0],
       safeDaysWorked, safeDaysWorked * 7, safeIncome, underwriting.eligible ? 1 : 0,
