@@ -1,7 +1,7 @@
 /*
  * Settlement & Payout Engine
  *
- * From coffee chat screenshots:
+ * Settlement Architecture Pipeline:
  *   1. Trigger confirmed → 2. Worker eligibility check → 3. Payout calculated
  *   → 4. Transfer initiated → 5. Record updated
  *

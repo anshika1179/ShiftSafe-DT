@@ -222,7 +222,7 @@ async function initSchema(db: any) {
 
 /**
  * Seed 4 hypothetical workers with weekly data
- * as per coffee chat feedback — at least 3-4 entries, not 1000
+ * limits data seeding to 3-4 entries for robust manual testing
  */
 async function seedDemoData(db: any) {
   const existingCount = (await db.prepare('SELECT COUNT(*) as cnt FROM workers').get())?.cnt || 0;

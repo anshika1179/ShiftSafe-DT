@@ -1,7 +1,7 @@
 /*
  * Premium Pricing Engine v3.0
  *
- * Implements the exact formula from Syntax Brain Error coffee chat:
+ * Implements the proprietary actuarial formula engineered by Team Syntax Brain Error:
  *   Base Premium = (trigger_probability) × (avg_income_lost_per_day) × (days_exposed)
  *   Adjust for: city tier, peril type, worker activity tier
  *
@@ -289,7 +289,7 @@ export interface PremiumResult {
 }
 
 /**
- * Core pricing formula from coffee chat:
+ * Core algorithmic pricing formula:
  *   Base = trigger_probability × avg_income_lost_per_day × days_exposed
  *   Then map to nearest fixed tier
  */

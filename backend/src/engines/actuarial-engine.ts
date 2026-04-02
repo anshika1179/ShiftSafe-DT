@@ -1,7 +1,7 @@
 /*
  * Actuarial & Stress Testing Engine
  *
- * From coffee chat:
+ * Actuarial Constraints:
  *   - BCR (Burning Cost Rate) = total claims ÷ total premium collected
  *   - Target BCR: 0.55–0.70 → 65 paise per ₹1 goes to payouts
  *   - Loss Ratio > 85%: suspend new enrollments

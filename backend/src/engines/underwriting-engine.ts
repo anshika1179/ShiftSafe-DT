@@ -1,7 +1,7 @@
 /*
  * Underwriting Engine — Who Gets Covered
  *
- * From coffee chat:
+ * Underwriting Core Algorithms:
  *   - Active gig worker on Zomato / Swiggy / Zepto / Blinkit / Amazon Flex
  *   - Minimum 7 active delivery days before cover starts
  *   - City-based pools — Delhi AQI pool ≠ Mumbai rain pool
