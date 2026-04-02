@@ -528,6 +528,10 @@ Instead of using Generative AI (LLMs) to determine financial risk—which is ban
 **What:** Users manually input their "Weekly Earnings" and "Days Active".
 **Why:** Platforms like Zomato/Swiggy do not expose open OAuth APIs to read private rider data. In production, an aggregator partnership would auto-pull this data; for the hackathon, user-input simulate the data stream.
 
+#### 6. Native Code Automation vs. Low-Code (n8n/Zapier)
+**What:** We built an event-driven CRON and 5 native TypeScript engines instead of using visual workflow tools like n8n or Zapier.
+**Why:** Parametric insurance requires executing complex mathematical models (Premium Engine) and high-speed fraud logic (Isolation Forests) *before* processing payments. Low-code platforms introduce API latency and moving data between nodes poses security flaws for financial apps. Natively coding the automation in Next.js guarantees sub-2-second settlement speeds entirely within our own database loop.
+
 ### API Endpoints Reference
 
 | Method | Endpoint | Purpose | Auth |
