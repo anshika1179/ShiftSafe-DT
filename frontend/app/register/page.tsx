@@ -20,6 +20,8 @@ const CITIES = [
   { name: 'Jaipur', zones: ['Malviya Nagar', 'C-Scheme', 'Vaishali Nagar', 'Mansarovar'], tier: 2, tierLabel: 'Tier 2 · Urban' },
   { name: 'Lucknow', zones: ['Hazratganj', 'Gomti Nagar', 'Aliganj', 'Indira Nagar'], tier: 2, tierLabel: 'Tier 2 · Urban' },
   { name: 'Ahmedabad', zones: ['SG Highway', 'Navrangpura', 'Satellite', 'Prahlad Nagar'], tier: 2, tierLabel: 'Tier 2 · Urban' },
+  // Tier 3 Emerging
+  { name: 'Other', zones: ['Custom Location'], tier: 3, tierLabel: 'Tier 3 · Emerging' },
 ];
 const PLATFORMS = ['Zomato', 'Swiggy', 'Amazon Flex', 'Blinkit', 'Zepto'];
 
@@ -37,6 +39,8 @@ export default function RegisterPage() {
     platform: 'Zomato',
     city: 'Mumbai',
     zone: 'Andheri East',
+    customCity: '',
+    customZone: '',
     avgWeeklyEarnings: '',
     hoursPerDay: '',
     daysWorkedThisWeek: '6',
@@ -97,14 +101,17 @@ export default function RegisterPage() {
 
   const handleCalculatePremium = () => {
     setStep('calculating');
+    const finalCity = form.city === 'Other' && form.customCity ? form.customCity : form.city;
+    const finalZone = form.city === 'Other' && form.customZone ? form.customZone : form.zone;
     const daysWorked = parseInt(form.daysWorkedThisWeek) || 6;
+    
     const result = calculateWeeklyPremium(
-      form.zone,
+      finalZone,
       parseFloat(form.avgWeeklyEarnings) || 4200,
       form.platform,
       0,
       'clear',
-      form.city,
+      finalCity,
       daysWorked,
       14, // assume 14 active days for new registration
     );
@@ -118,7 +125,8 @@ export default function RegisterPage() {
           name: form.name,
           phone,
           platform: form.platform,
-          zone: form.zone,
+          zone: finalZone,
+          city: finalCity,
           avgWeeklyEarnings: parseFloat(form.avgWeeklyEarnings) || 4200,
           hoursPerDay: parseInt(form.hoursPerDay) || 8,
           upiId: form.upiId,
@@ -282,13 +290,17 @@ export default function RegisterPage() {
               <select className="select-field" value={form.city} onChange={e => update('city', e.target.value)}>
                 {CITIES.map(c => <option key={c.name} value={c.name}>{c.name} — {c.tierLabel}</option>)}
               </select>
+              {form.city === 'Other' && (
+                <input className="input-field mt-2" value={form.customCity} onChange={e => update('customCity', e.target.value)} placeholder="Enter your City or Town" />
+              )}
               {currentCity && (
                 <div className={`mt-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold inline-flex items-center gap-1.5 ${
                   currentCity.tier === 1 ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
-                  : 'bg-amber-50 text-amber-600 border border-amber-200'
+                  : currentCity.tier === 2 ? 'bg-amber-50 text-amber-600 border border-amber-200'
+                  : 'bg-primary-50 text-primary-600 border border-primary-200'
                 }`}>
-                  <span>{currentCity.tier === 1 ? '🏙️' : '🌆'}</span>
-                  {currentCity.tierLabel} · {currentCity.tier === 1 ? 'Full coverage, 100% payout cap' : '85% payout cap, 5% premium discount'}
+                  <span>{currentCity.tier === 1 ? '🏙️' : currentCity.tier === 2 ? '🌆' : '🏘️'}</span>
+                  {currentCity.tierLabel} · {currentCity.tier === 1 ? 'Full coverage, 100% payout cap' : currentCity.tier === 2 ? '85% payout cap, 5% premium discount' : '70% payout cap, 15% premium discount'}
                 </div>
               )}
             </div>
@@ -298,6 +310,9 @@ export default function RegisterPage() {
               <select className="select-field" value={form.zone} onChange={e => update('zone', e.target.value)}>
                 {currentCity.zones.map(z => <option key={z} value={z}>{z}</option>)}
               </select>
+              {form.city === 'Other' && form.zone === 'Custom Location' && (
+                <input className="input-field mt-2" value={form.customZone} onChange={e => update('customZone', e.target.value)} placeholder="Enter your specific district or zone" />
+              )}
             </div>
 
             <div>

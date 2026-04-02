@@ -9,6 +9,7 @@ export interface WorkerProfile {
   name: string;
   phone: string;
   platform: string;
+  city?: string;
   zone: string;
   avgWeeklyEarnings: number;
   hoursPerDay: number;
