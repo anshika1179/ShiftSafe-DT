@@ -150,6 +150,7 @@ Gig workers operate on weekly cash flows. ShiftSafe-DT aligns with their financi
 [![Status](https://img.shields.io/badge/Status-Production_Ready-brightgreen?style=for-the-badge)](#)
 [![Build](https://img.shields.io/badge/Build-Passing-success?style=for-the-badge)](#)
 [![Engines](https://img.shields.io/badge/Engines-5_Active-blueviolet?style=for-the-badge)](#)
+[![Cities](https://img.shields.io/badge/Cities-11_(3_Tiers)-orange?style=for-the-badge)](#)
 [![Next.js](https://img.shields.io/badge/Next.js-16.2.1-black?style=for-the-badge&logo=next.js)](#)
 [![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react)](#)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Strict-3178C6?style=for-the-badge&logo=typescript)](#)
@@ -189,13 +190,51 @@ Plus: **Historical weather-based risk intelligence**, **2 live stress test scena
 
 ---
 
+## 🌆 City Tier Classification
+
+> Tier-based risk pooling ensures **actuarial fairness** — Tier 1 metros have mature risk data enabling full coverage, while Tier 2/3 cities get conservative pricing until enough data accumulates.
+
+| Tier | Label | Cities | Premium Discount | Max Payout Cap | Reserve Multiplier |
+|:----:|:------|:-------|:----------------:|:--------------:|:-----------------:|
+| **Tier 1** | 🏙️ Metro | Mumbai, Delhi, Bengaluru, Hyderabad, Pune, Chennai | 0% (baseline) | 100% | 1.0x |
+| **Tier 2** | 🌆 Urban | Gurugram, Noida, Jaipur, Lucknow, Ahmedabad | 5% discount | 85% | 1.2x |
+| **Tier 3** | 🌇 Emerging | All other cities | 10% discount | 70% | 1.5x |
+
+### How Tiers Impact the Platform
+
+| Impact Area | Tier 1 Metro | Tier 2 Urban | Tier 3 Emerging |
+|:------------|:-------------|:-------------|:----------------|
+| **Risk Data** | Mature (5+ years IMD/CPCB) | Growing (2-3 years) | Limited (<1 year) |
+| **Gig Density** | High (500+ riders/zone) | Moderate (100-500) | Low (<100) |
+| **Premium** | Full price | 5% lower (data subsidy) | 10% lower (adoption incentive) |
+| **Payout Cap** | 50% of weekly earnings | 42.5% (85% of base) | 35% (70% of base) |
+| **Reserve Fund** | Standard reserves | 20% extra reserves | 50% extra reserves |
+| **Trigger Thresholds** | Standard | Slightly higher (conservative) | Conservative |
+
+### City Risk Pool Assignments
+
+| Risk Pool | Cities | Dominant Perils | Seasonal Peak |
+|:----------|:-------|:---------------|:-------------|
+| `mumbai_rain` | Mumbai, Pune | Heavy rain, monsoon floods | Jul–Sep (+35%) |
+| `delhi_aqi` | Delhi, Gurugram, Noida | AQI pollution, heatwave | Nov–Jan (+20%), May–Jun (+30%) |
+| `bengaluru_mix` | Bengaluru | Moderate rain + heat | Jun–Sep (+15%) |
+| `hyderabad_mix` | Hyderabad | Flash floods, extreme heat | May–Jun (+25%), Jul–Sep (+20%) |
+| `chennai_rain` | Chennai | NE monsoon, cyclones | Oct–Dec (+30%) |
+| `jaipur_heat` | Jaipur | Desert heat dominant | Apr–Jun (+35%) |
+| `lucknow_mix` | Lucknow | AQI + summer heat | Nov–Jan (+15%), May–Jun (+20%) |
+| `ahmedabad_heat` | Ahmedabad | Extreme heat | Apr–Jun (+35%) |
+
+---
+
 ## 🧮 Engine 1: Premium Pricing — Parametric Model v3.0
 
 ### The Exact Formula
 
 ```
 Base Premium = trigger_probability × avg_income_lost_per_day × days_exposed
-Final        = Base × seasonal_multiplier → mapped to nearest fixed tier
+Adjusted     = Base × seasonal_multiplier
+Tier Premium = mapped to nearest fixed tier (₹20/₹35/₹50)
+Final        = Tier Premium × (1 - city_tier_discount)
 ```
 
 ### How Each Variable Is Calculated
@@ -713,8 +752,9 @@ Costs:
 
 1. **Parametric triggers** = no claims adjustment cost (other insurers spend 15-20% on claims processing)
 2. **Weekly micro-premiums** = accessible to workers earning ₹4K-5K/week (traditional insurance requires monthly/annual commitment)
-3. **City-specific risk pools** = more accurate pricing than one-size-fits-all products
+3. **City-tier risk pools** = 3-tier system (Metro/Urban/Emerging) for actuarially fair pricing across 11 cities
 4. **Zero-touch UX** = 10x faster claim settlement than any traditional insurer
+5. **Tier-based scaling** = conservative payout caps in Tier 2/3 cities protect reserves while growing market
 
 ---
 
@@ -727,7 +767,7 @@ Costs:
 | P1 | Authentication | Twilio SMS Verify + NextAuth.js |
 | P1 | Database migration | SQLite to Neon Serverless Postgres |
 | P2 | ML model training | Real claims data with scikit-learn Isolation Forest |
-| P2 | Multi-city expansion | Zone coordinates + city-specific risk profiles |
+| P2 | Tier 3 city expansion | Zone coordinates + city-specific risk profiles for 50+ cities |
 | P2 | Reinsurance Layer | Reserve fund management + catastrophe bonds |
 
 ---
@@ -739,8 +779,9 @@ Costs:
   <br/><br/>
   
   ```
-  Premium = P(trigger) × avg_income_lost/day × days_exposed → Fixed Tier
+  Premium = P(trigger) × income_lost/day × days_exposed × (1 - tier_discount) → Fixed Tier
   BCR = Σ Claims ÷ Σ Premium → Target: 0.55–0.70
   Settlement = Trigger → Eligibility → Payout → Transfer → Record (< 2 min)
+  City Tiers = Metro (100% cap) | Urban (85% cap) | Emerging (70% cap)
   ```
 </div>

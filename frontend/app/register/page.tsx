@@ -7,10 +7,19 @@ import { calculateWeeklyPremium } from '@/backend/engines/premium-engine';
 type Step = 'phone' | 'otp' | 'profile' | 'calculating';
 
 const CITIES = [
-  { name: 'Mumbai', zones: ['Andheri East', 'Andheri West', 'Bandra', 'Dharavi', 'Kurla', 'Powai', 'Worli', 'Thane', 'Navi Mumbai'] },
-  { name: 'Delhi', zones: ['Connaught Place', 'Lajpat Nagar', 'Saket', 'Dwarka'] },
-  { name: 'Gurugram', zones: ['Cyber City'] },
-  { name: 'Noida', zones: ['Sector 62'] },
+  // Tier 1 Metro
+  { name: 'Mumbai', zones: ['Andheri East', 'Andheri West', 'Bandra', 'Dharavi', 'Kurla', 'Powai', 'Worli', 'Thane', 'Navi Mumbai'], tier: 1, tierLabel: 'Tier 1 · Metro' },
+  { name: 'Delhi', zones: ['Connaught Place', 'Lajpat Nagar', 'Saket', 'Dwarka'], tier: 1, tierLabel: 'Tier 1 · Metro' },
+  { name: 'Bengaluru', zones: ['Koramangala', 'Indiranagar', 'HSR Layout', 'Whitefield', 'Electronic City'], tier: 1, tierLabel: 'Tier 1 · Metro' },
+  { name: 'Hyderabad', zones: ['Gachibowli', 'HITEC City', 'Banjara Hills', 'Secunderabad'], tier: 1, tierLabel: 'Tier 1 · Metro' },
+  { name: 'Pune', zones: ['Koregaon Park', 'Hinjawadi', 'Kharadi', 'Viman Nagar'], tier: 1, tierLabel: 'Tier 1 · Metro' },
+  { name: 'Chennai', zones: ['T. Nagar', 'Anna Nagar', 'Adyar', 'Velachery', 'OMR'], tier: 1, tierLabel: 'Tier 1 · Metro' },
+  // Tier 2 Urban
+  { name: 'Gurugram', zones: ['Cyber City', 'DLF Phase 1-3', 'Sohna Road'], tier: 2, tierLabel: 'Tier 2 · Urban' },
+  { name: 'Noida', zones: ['Sector 62', 'Sector 18', 'Greater Noida'], tier: 2, tierLabel: 'Tier 2 · Urban' },
+  { name: 'Jaipur', zones: ['Malviya Nagar', 'C-Scheme', 'Vaishali Nagar', 'Mansarovar'], tier: 2, tierLabel: 'Tier 2 · Urban' },
+  { name: 'Lucknow', zones: ['Hazratganj', 'Gomti Nagar', 'Aliganj', 'Indira Nagar'], tier: 2, tierLabel: 'Tier 2 · Urban' },
+  { name: 'Ahmedabad', zones: ['SG Highway', 'Navrangpura', 'Satellite', 'Prahlad Nagar'], tier: 2, tierLabel: 'Tier 2 · Urban' },
 ];
 const PLATFORMS = ['Zomato', 'Swiggy', 'Amazon Flex', 'Blinkit', 'Zepto'];
 
@@ -271,8 +280,17 @@ export default function RegisterPage() {
             <div>
               <label className="block text-[11px] font-bold tracking-widest text-gray-500 uppercase mb-1.5">City</label>
               <select className="select-field" value={form.city} onChange={e => update('city', e.target.value)}>
-                {CITIES.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                {CITIES.map(c => <option key={c.name} value={c.name}>{c.name} — {c.tierLabel}</option>)}
               </select>
+              {currentCity && (
+                <div className={`mt-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold inline-flex items-center gap-1.5 ${
+                  currentCity.tier === 1 ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                  : 'bg-amber-50 text-amber-600 border border-amber-200'
+                }`}>
+                  <span>{currentCity.tier === 1 ? '🏙️' : '🌆'}</span>
+                  {currentCity.tierLabel} · {currentCity.tier === 1 ? 'Full coverage, 100% payout cap' : '85% payout cap, 5% premium discount'}
+                </div>
+              )}
             </div>
 
             <div>

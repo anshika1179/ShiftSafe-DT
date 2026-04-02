@@ -3,16 +3,65 @@
  *
  * Implements the exact formula from DevTrails coffee chat:
  *   Base Premium = (trigger_probability) × (avg_income_lost_per_day) × (days_exposed)
- *   Adjust for: city, peril type, worker activity tier
+ *   Adjust for: city tier, peril type, worker activity tier
+ *
+ * City Tier System:
+ *   Tier 1 (Metro)    — Mumbai, Delhi, Bengaluru, Hyderabad, Pune, Chennai
+ *   Tier 2 (Urban)    — Gurugram, Noida, Jaipur, Lucknow, Ahmedabad
+ *   Tier 3 (Emerging) — All other cities
  *
  * Fixed premium tiers: ₹20, ₹30, ₹40, ₹50 per week
  * Weekly cycle only — never monthly
  * 50% maximum payout cap
  */
 
+// ─── City Tier Classification ────────────────────────────────────────
+// Tier 1 (Metro):    Mature risk data, higher gig density, full coverage
+// Tier 2 (Urban):    Moderate data, growing markets, slight premium discount
+// Tier 3 (Emerging): Limited data, conservative pricing, lower payout caps
+
+export interface CityTierInfo {
+  tier: 1 | 2 | 3;
+  label: 'Metro' | 'Urban' | 'Emerging';
+  emoji: string;
+  premiumDiscount: number;      // % discount (Tier 1 = 0%, Tier 2 = 5%, Tier 3 = 10%)
+  maxPayoutMultiplier: number;  // 1.0 for Tier 1, 0.85 for Tier 2, 0.70 for Tier 3
+  reserveMultiplier: number;    // higher for less-data cities
+  riskPool: string;
+  description: string;
+}
+
+export const CITY_TIERS: Record<string, CityTierInfo> = {
+  // ── Tier 1: Metro cities with mature risk data ──
+  mumbai:     { tier: 1, label: 'Metro', emoji: '🏙️', premiumDiscount: 0,    maxPayoutMultiplier: 1.00, reserveMultiplier: 1.0, riskPool: 'mumbai_rain',   description: 'Full coverage · Monsoon-heavy risk profile' },
+  delhi:      { tier: 1, label: 'Metro', emoji: '🏙️', premiumDiscount: 0,    maxPayoutMultiplier: 1.00, reserveMultiplier: 1.0, riskPool: 'delhi_aqi',     description: 'Full coverage · AQI + heatwave risk profile' },
+  bengaluru:  { tier: 1, label: 'Metro', emoji: '🏙️', premiumDiscount: 0,    maxPayoutMultiplier: 1.00, reserveMultiplier: 1.0, riskPool: 'bengaluru_mix', description: 'Full coverage · Moderate rain + heat profile' },
+  hyderabad:  { tier: 1, label: 'Metro', emoji: '🏙️', premiumDiscount: 0,    maxPayoutMultiplier: 1.00, reserveMultiplier: 1.0, riskPool: 'hyderabad_mix', description: 'Full coverage · Flash flood + heat profile' },
+  pune:       { tier: 1, label: 'Metro', emoji: '🏙️', premiumDiscount: 0,    maxPayoutMultiplier: 1.00, reserveMultiplier: 1.0, riskPool: 'mumbai_rain',   description: 'Full coverage · Western Ghats rain profile' },
+  chennai:    { tier: 1, label: 'Metro', emoji: '🏙️', premiumDiscount: 0,    maxPayoutMultiplier: 1.00, reserveMultiplier: 1.0, riskPool: 'chennai_rain',  description: 'Full coverage · Cyclone + NE monsoon profile' },
+  // ── Tier 2: Urban cities with growing gig economy ──
+  gurugram:   { tier: 2, label: 'Urban', emoji: '🌆', premiumDiscount: 0.05, maxPayoutMultiplier: 0.85, reserveMultiplier: 1.2, riskPool: 'delhi_aqi',     description: '85% payout cap · Delhi NCR suburb' },
+  noida:      { tier: 2, label: 'Urban', emoji: '🌆', premiumDiscount: 0.05, maxPayoutMultiplier: 0.85, reserveMultiplier: 1.2, riskPool: 'delhi_aqi',     description: '85% payout cap · Delhi NCR suburb' },
+  jaipur:     { tier: 2, label: 'Urban', emoji: '🌆', premiumDiscount: 0.05, maxPayoutMultiplier: 0.85, reserveMultiplier: 1.2, riskPool: 'jaipur_heat',   description: '85% payout cap · Desert heat profile' },
+  lucknow:    { tier: 2, label: 'Urban', emoji: '🌆', premiumDiscount: 0.05, maxPayoutMultiplier: 0.85, reserveMultiplier: 1.2, riskPool: 'lucknow_mix',   description: '85% payout cap · Mixed risk profile' },
+  ahmedabad:  { tier: 2, label: 'Urban', emoji: '🌆', premiumDiscount: 0.05, maxPayoutMultiplier: 0.85, reserveMultiplier: 1.2, riskPool: 'ahmedabad_heat',description: '85% payout cap · Extreme heat profile' },
+  // ── Tier 3: Emerging cities (default for unknown) ──
+};
+
+const DEFAULT_TIER_3: CityTierInfo = {
+  tier: 3, label: 'Emerging', emoji: '🌇', premiumDiscount: 0.10,
+  maxPayoutMultiplier: 0.70, reserveMultiplier: 1.5,
+  riskPool: 'default', description: '70% payout cap · Limited risk data',
+};
+
+export function getCityTier(city: string): CityTierInfo {
+  return CITY_TIERS[city.toLowerCase()] || DEFAULT_TIER_3;
+}
+
 // trigger probabilities per city per week
 // NOTE: these are hypothetical — in prod we'd pull from IMD/weather history
 const TRIGGER_PROBABILITIES: Record<string, Record<string, number>> = {
+  // ── Tier 1 Metro ──
   // Delhi NCR — AQI-heavy, heatwave in May-June
   delhi: {
     pollution:        0.35,   // AQI > 300 very common in winter
@@ -21,6 +70,43 @@ const TRIGGER_PROBABILITIES: Record<string, Record<string, number>> = {
     platform_outage:  0.05,
     curfew:           0.02,
   },
+  // Mumbai — rain-heavy
+  mumbai: {
+    heavy_rain:       0.30,   // monsoon floods
+    pollution:        0.08,
+    heatwave:         0.10,
+    platform_outage:  0.06,
+    curfew:           0.03,
+  },
+  bengaluru: {
+    heavy_rain:       0.18,   // moderate monsoon
+    pollution:        0.06,
+    heatwave:         0.12,
+    platform_outage:  0.04,
+    curfew:           0.01,
+  },
+  hyderabad: {
+    heavy_rain:       0.20,   // flash floods
+    pollution:        0.10,
+    heatwave:         0.22,   // hot summers
+    platform_outage:  0.05,
+    curfew:           0.02,
+  },
+  pune: {
+    heavy_rain:       0.25,   // Western Ghats rain
+    pollution:        0.07,
+    heatwave:         0.08,
+    platform_outage:  0.04,
+    curfew:           0.02,
+  },
+  chennai: {
+    heavy_rain:       0.28,   // NE monsoon + cyclones
+    pollution:        0.05,
+    heatwave:         0.15,
+    platform_outage:  0.05,
+    curfew:           0.02,
+  },
+  // ── Tier 2 Urban ──
   gurugram: {
     pollution:        0.30,
     heatwave:         0.18,
@@ -35,13 +121,26 @@ const TRIGGER_PROBABILITIES: Record<string, Record<string, number>> = {
     platform_outage:  0.05,
     curfew:           0.02,
   },
-  // Mumbai — rain-heavy
-  mumbai: {
-    heavy_rain:       0.30,   // monsoon floods
-    pollution:        0.08,
-    heatwave:         0.10,
-    platform_outage:  0.06,
-    curfew:           0.03,
+  jaipur: {
+    heatwave:         0.35,   // desert heat dominant
+    pollution:        0.12,
+    heavy_rain:       0.06,
+    platform_outage:  0.04,
+    curfew:           0.01,
+  },
+  lucknow: {
+    pollution:        0.25,
+    heatwave:         0.20,
+    heavy_rain:       0.12,
+    platform_outage:  0.04,
+    curfew:           0.02,
+  },
+  ahmedabad: {
+    heatwave:         0.38,   // extreme heat
+    pollution:        0.10,
+    heavy_rain:       0.05,
+    platform_outage:  0.04,
+    curfew:           0.01,
   },
 };
 
@@ -89,12 +188,8 @@ export function classifyActivityTier(daysWorkedInWeek: number, totalActiveDelive
 
 // which risk pool does this city belong to?
 export function getCityPool(city: string): string {
-  const cityLower = city.toLowerCase();
-  if (['delhi', 'new delhi'].includes(cityLower)) return 'delhi_aqi';
-  if (['gurugram', 'gurgaon'].includes(cityLower)) return 'delhi_aqi';
-  if (cityLower === 'noida') return 'delhi_aqi';
-  if (['mumbai', 'thane', 'navi mumbai'].includes(cityLower)) return 'mumbai_rain';
-  return 'mumbai_rain'; // default pool
+  const tierInfo = getCityTier(city);
+  return tierInfo.riskPool;
 }
 
 function clamp(val: number, min: number, max: number): number {
@@ -107,15 +202,32 @@ function getSeasonalMultiplier(city: string): number {
   const month = new Date().getMonth() + 1; // 1-12
   const cityLower = city.toLowerCase();
 
-  // Delhi NCR: May-June extreme heat + AQI
+  // Tier 1 Metro seasonal adjustments
   if (['delhi', 'gurugram', 'noida', 'new delhi', 'gurgaon'].includes(cityLower)) {
     if (month === 5 || month === 6) return 1.3;   // 30% uplift for hazard season
     if (month >= 11 || month <= 1) return 1.2;    // winter AQI season
   }
-
-  // Mumbai: July-September monsoon
-  if (['mumbai', 'thane', 'navi mumbai'].includes(cityLower)) {
+  if (['mumbai', 'thane', 'navi mumbai', 'pune'].includes(cityLower)) {
     if (month >= 7 && month <= 9) return 1.35;    // monsoon season
+  }
+  if (cityLower === 'bengaluru') {
+    if (month >= 6 && month <= 9) return 1.15;    // moderate monsoon
+  }
+  if (cityLower === 'hyderabad') {
+    if (month >= 7 && month <= 9) return 1.20;    // monsoon + floods
+    if (month === 5 || month === 6) return 1.25;  // extreme heat
+  }
+  if (cityLower === 'chennai') {
+    if (month >= 10 && month <= 12) return 1.30;  // NE monsoon + cyclones
+  }
+
+  // Tier 2 Urban seasonal adjustments
+  if (['jaipur', 'ahmedabad'].includes(cityLower)) {
+    if (month >= 4 && month <= 6) return 1.35;    // desert heat peak
+  }
+  if (cityLower === 'lucknow') {
+    if (month >= 11 || month <= 1) return 1.15;   // winter AQI
+    if (month === 5 || month === 6) return 1.20;  // summer heat
   }
 
   return 1.0; // normal season
@@ -145,6 +257,7 @@ export interface PremiumResult {
   activityTier: string;
   premiumTierName: string;
   cityPool: string;
+  cityTier: CityTierInfo;
   isEligible: boolean;
   eligibilityReason: string;
   contributions: {
@@ -160,6 +273,7 @@ export interface PremiumResult {
     rawPremium: number;
     seasonalMultiplier: number;
     fixedTierPremium: number;
+    cityTierDiscount: number;
   };
   // legacy compatibility fields
   finalPremium: number;
@@ -196,9 +310,10 @@ export function calculateWeeklyPremium(
     ? `Need minimum 7 active delivery days. Current: ${totalActiveDeliveryDays} days.`
     : `Eligible — ${totalActiveDeliveryDays} active days, ${daysWorkedThisWeek} days/week.`;
 
-  // step 2: look up trigger probabilities for their city
-  const cityPool = getCityPool(city);
-  const cityKey = cityPool === 'delhi_aqi' ? 'delhi' : 'mumbai';
+  // step 2: look up trigger probabilities and city tier
+  const cityTier = getCityTier(city);
+  const cityPool = cityTier.riskPool;
+  const cityKey = city.toLowerCase();
   const cityProbs = TRIGGER_PROBABILITIES[cityKey] || TRIGGER_PROBABILITIES.mumbai;
 
   // Combined trigger probability (any event in a week)
@@ -239,9 +354,13 @@ export function calculateWeeklyPremium(
   else if (riskScore <= 75) { riskLabel = 'High'; riskLevel = 'high'; }
   else { riskLabel = 'Very High'; riskLevel = 'severe'; }
 
-  // 50% maximum payout cap
-  const maxPayoutPerWeek = Math.round(earnings * 0.50); // 50% cap
+  // 50% maximum payout cap, adjusted by city tier
+  const maxPayoutPerWeek = Math.round(earnings * 0.50 * cityTier.maxPayoutMultiplier);
   const coverageAmount = Math.min(tier.maxPayoutPerWeek, maxPayoutPerWeek);
+
+  // Apply city tier discount to premium
+  const cityTierDiscount = cityTier.premiumDiscount;
+  const discountedPremium = Math.round(fixedPremium * (1 - cityTierDiscount));
 
   // breakdown for the dashboard pie chart
   const weatherPeril = (cityProbs.heavy_rain || 0) + (cityProbs.heatwave || 0);
@@ -263,7 +382,7 @@ export function calculateWeeklyPremium(
   }
 
   return {
-    weeklyPremium: fixedPremium,
+    weeklyPremium: discountedPremium,
     coverageAmount,
     maxPayoutPerWeek,
     riskScore,
@@ -271,6 +390,7 @@ export function calculateWeeklyPremium(
     activityTier: isEligible ? activityTier : 'ineligible',
     premiumTierName: tier.name,
     cityPool,
+    cityTier,
     isEligible,
     eligibilityReason,
     contributions,
@@ -280,15 +400,16 @@ export function calculateWeeklyPremium(
       daysExposed,
       rawPremium: parseFloat(adjustedPremium.toFixed(2)),
       seasonalMultiplier,
-      fixedTierPremium: fixedPremium,
+      fixedTierPremium: discountedPremium,
+      cityTierDiscount,
     },
     // Legacy fields for backward compat
-    finalPremium: fixedPremium,
-    basePremium: Math.round(fixedPremium * 0.8),
+    finalPremium: discountedPremium,
+    basePremium: Math.round(discountedPremium * 0.8),
     riskLevel,
     breakdown: {
-      base: Math.round(fixedPremium * 0.8),
-      aiRiskAdjustment: Math.round(fixedPremium * 0.2),
+      base: Math.round(discountedPremium * 0.8),
+      aiRiskAdjustment: Math.round(discountedPremium * 0.2),
       anomalyPenalty: 0,
     },
     factors: {
