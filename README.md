@@ -187,6 +187,7 @@ Plus: **Historical weather-based risk intelligence**, **2 live stress test scena
 | 2 | **Insurance Policy Management** | Active weekly policies with fixed premium tiers (₹20/₹35/₹50). **Cancel/reactivate toggle** on policy page with confirmation modal and warning about coverage loss. Auto-renewal support. City-based risk pools (Delhi AQI pool ≠ Mumbai Rain pool). Payout channel display (UPI Primary / IMPS Fallback / Razorpay Demo). Pricing formula transparency on-screen. | `GET/PATCH /api/policies` | ✅ |
 | 3 | **Dynamic Premium Calculation** | **Parametric Pricing Model v3.0** using exact formula: `trigger_probability × avg_income_lost_per_day × days_exposed`. Seasonal multipliers (Delhi May-June +30%, Mumbai monsoon +35%). Fixed tiers mapped from raw calculation. **50% maximum payout cap.** Weekly data basis — not annual averages. Full breakdown shown during registration. | `GET /api/premium` | ✅ |
 | 4 | **Claims Management** | **Zero-Touch Parametric Claims** — External trigger detection → Fraud Engine scoring (0-100, 6-rule hybrid) → **Settlement Engine** (5-step pipeline) → UPI/IMPS payout. Weekly coverage limits enforced. Dashboard shows settlement timeline, transaction reference (`UPI-TXN-XXXXXXX`), fraud score label, and payout channel. Live trigger simulator on both Dashboard and Claims pages. | `GET/POST /api/claims` | ✅ |
+| 5 | **Cloud Database & Automation** | Fully refactored asynchronous database layer running on **Neon Serverless Postgres**. Automated via **GitHub Actions CRON** that securely hits the `/api/triggers/cron` endpoint every hour globally, requiring zero manual administration after deployment. | `GET /api/triggers/cron` | ✅ |
 
 ---
 
@@ -762,10 +763,10 @@ Costs:
 
 | Priority | Enhancement | Technology |
 |:--------:|:-----------|:----------|
-| P0 | Real weather oracles | OpenWeatherMap API integration |
+| P0 | Real weather oracles | OpenWeatherMap API integration (Pre-configured via `.env`) |
 | P0 | Payment gateway | Razorpay UPI Mandates + RazorpayX Payouts |
 | P1 | Authentication | Twilio SMS Verify + NextAuth.js |
-| P1 | Database migration | SQLite to Neon Serverless Postgres |
+| ✅ DONE | Database & CI/CD | Neon Serverless Postgres + GitHub Actions CRON |
 | P2 | ML model training | Real claims data with scikit-learn Isolation Forest |
 | P2 | Tier 3 city expansion | Zone coordinates + city-specific risk profiles for 50+ cities |
 | P2 | Reinsurance Layer | Reserve fund management + catastrophe bonds |
