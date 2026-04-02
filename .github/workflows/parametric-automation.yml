@@ -19,22 +19,21 @@ jobs:
           PROD_URL: ${{ secrets.PROD_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          if [ -z "$PROD_URL" ]; then
-            echo "Error: PROD_URL is not set in GitHub Secrets."
-            exit 1
-          fi
-          if [ -z "$CRON_SECRET" ]; then
-            echo "Error: CRON_SECRET is not set in GitHub Secrets."
-            exit 1
+          # Gracefully skip if secrets are not configured on this repo
+          # (Prevents failures on forks or team repos without secrets)
+          if [ -z "$PROD_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "⚠️  PROD_URL or CRON_SECRET not set in this repo's Secrets — skipping automation."
+            echo "   (This is expected on forks. Add secrets to enable automation.)"
+            exit 0
           fi
 
-          CLEAN_URL=$(echo "$PROD_URL" | tr -d '\n\r' | xargs)
-          CLEAN_SECRET=$(echo "$CRON_SECRET" | tr -d '\n\r' | xargs)
+          # Sanitize secrets: strip any invisible whitespace, newlines, carriage returns
+          CLEAN_URL=$(printf '%s' "$PROD_URL" | tr -d '\n\r\t ' | sed 's/[[:space:]]//g')
+          CLEAN_SECRET=$(printf '%s' "$CRON_SECRET" | tr -d '\n\r\t')
 
           echo "Pinging ShiftSafe Automation Engine at $CLEAN_URL"
           
-          # Use curl with silent/fail modes, injecting the secret as a Bearer token
-          # Added -L to follow 308 redirects and removed -X POST because the route uses GET
+          # Use curl with -L to follow any redirects (e.g., Vercel 308), GET request
           response=$(curl -L --write-out "%{http_code}" --silent --output response.txt \
             "$CLEAN_URL/api/triggers/cron" \
             -H "Authorization: Bearer $CLEAN_SECRET" \
