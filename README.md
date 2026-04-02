@@ -183,7 +183,7 @@ Plus: **Historical weather-based risk intelligence**, **2 live stress test scena
 
 | # | Requirement | Implementation | API | Status |
 |:-:|:-----------|:--------------|:---:|:------:|
-| 1 | **Registration Process** | 3-step onboarding (Phone → OTP `123456` → Profile) with **city selection** (Mumbai/Delhi/Gurugram/Noida), **dynamic zone dropdowns** (9 Mumbai zones, 4 Delhi zones), **platform whitelisting** (Zomato/Swiggy/Amazon Flex/Blinkit/Zepto), **activity days tracking**, and **insurance opt-in/opt-out toggle**. Server-side validation: phone format (10-digit), name length (2-100 chars), income range capping (₹500–₹50,000). Duplicate phone detection. | `POST /api/register` | ✅ |
+| 1 | **Registration Process** | 3-step onboarding (Phone → OTP `123456` → Profile) with **city selection**, **dynamic zone dropdowns**, **platform whitelisting**, and **insurance opt-in/opt-out toggle**. *Note: OTP is hardcoded to `123456` intentionally to bypass Twilio rate-limits and allow frictionless evaluator testing during the hackathon.* | `POST /api/register` | ✅ |
 | 2 | **Insurance Policy Management** | Active weekly policies with fixed premium tiers (₹20/₹35/₹50). **Cancel/reactivate toggle** on policy page with confirmation modal and warning about coverage loss. Auto-renewal support. City-based risk pools (Delhi AQI pool ≠ Mumbai Rain pool). Payout channel display (UPI Primary / IMPS Fallback / Razorpay Demo). Pricing formula transparency on-screen. | `GET/PATCH /api/policies` | ✅ |
 | 3 | **Dynamic Premium Calculation** | **Parametric Pricing Model v3.0** using exact formula: `trigger_probability × avg_income_lost_per_day × days_exposed`. Seasonal multipliers (Delhi May-June +30%, Mumbai monsoon +35%). Fixed tiers mapped from raw calculation. **50% maximum payout cap.** Weekly data basis — not annual averages. Full breakdown shown during registration. | `GET /api/premium` | ✅ |
 | 4 | **Claims Management** | **Zero-Touch Parametric Claims** — External trigger detection → Fraud Engine scoring (0-100, 6-rule hybrid) → **Settlement Engine** (5-step pipeline) → UPI/IMPS payout. Weekly coverage limits enforced. Dashboard shows settlement timeline, transaction reference (`UPI-TXN-XXXXXXX`), fraud score label, and payout channel. Live trigger simulator on both Dashboard and Claims pages. | `GET/POST /api/claims` | ✅ |
@@ -500,9 +500,12 @@ npm run dev
 # http://localhost:3000/actuarial          → 🏆 Actuarial Command Center (no login needed)
 ```
 
-**Demo Credentials:**
+**Evaluator / Demo Credentials:**
 - Phone: Any 10-digit number (e.g., `9876543210`)
 - OTP: `123456`
+
+> 💡 **Hackathon Architecture Note on Authentication:** 
+> We explicitly bypassed real Twilio/SMS verification for this submission and hardcoded the OTP. Relying on real telecom APIs during live pitch demos frequently results in delayed texts, rate-limit blocking, and severe evaluation friction since trial accounts require pre-verified numbers. This intentional design choice guarantees that any judge or mentor can instantly test the end-to-end platform using their own mobile device without friction.
 
 ### API Endpoints Reference
 
