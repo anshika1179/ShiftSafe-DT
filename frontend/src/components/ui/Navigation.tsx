@@ -11,6 +11,7 @@ export function BottomNav() {
 
   const links = [
     { href: '/dashboard', icon: '📊', label: 'Home' },
+    { href: '/monitoring', icon: '🗺️', label: 'Live' },
     { href: '/policies', icon: '🛡️', label: 'Policy' },
     { href: '/claims', icon: '⚡', label: 'Claims' },
     { href: '/actuarial', icon: '🧮', label: 'Actuarial' },
@@ -82,10 +83,14 @@ export function TopBar() {
         </Link>
 
         <div className="flex items-center gap-2.5">
-          <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-500/20 shadow-sm">
+          <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-500/20 shadow-sm hidden sm:flex">
             <span className="live-dot" />
             <span className="text-[10px] text-emerald-600 font-extrabold tracking-widest uppercase">Live</span>
           </div>
+
+          <Link href="/admin" className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-lg shadow-sm border border-slate-200 transition-all hover:scale-105 active:scale-95" aria-label="Admin Dashboard">
+            ⚙️
+          </Link>
 
           {/* Profile Avatar */}
           <div className="relative" ref={dropdownRef}>

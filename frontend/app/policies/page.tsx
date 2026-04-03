@@ -29,6 +29,10 @@ export default function PoliciesPage() {
   const { worker, policy, claims, isLoggedIn } = useAppState();
   const [insuranceActive, setInsuranceActive] = useState(true);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [paymentHistory, setPaymentHistory] = useState([
+    { id: 'TXN-001', date: '16 Mar 2026', amount: 35, status: 'Paid', receipt: 'receipt-001.pdf' }
+  ]);
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
 
   useEffect(() => {
     if (!isLoggedIn) router.replace('/');
@@ -71,6 +75,21 @@ export default function PoliciesPage() {
         body: JSON.stringify({ policyId: policy.id, action: 'reactivate' }),
       }).catch(() => {});
     }
+  };
+
+  const handleUploadReceipt = () => {
+    setUploadingReceipt(true);
+    setTimeout(() => {
+      setPaymentHistory([{
+        id: `TXN-${Math.floor(Math.random()*1000)}`,
+        date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+        amount: weeklyPremium,
+        status: 'Paid',
+        receipt: `receipt-paid.pdf`
+      }, ...paymentHistory]);
+      setUploadingReceipt(false);
+      alert('Receipt uploaded and payment verified successfully!');
+    }, 1500);
   };
 
   return (
@@ -261,6 +280,47 @@ export default function PoliciesPage() {
               <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${ch.status === 'Primary' ? 'badge-success' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>
                 {ch.status}
               </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* payment history and receipt upload */}
+      <div className="glass-card p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Payment History & Receipts</div>
+          <button 
+            onClick={handleUploadReceipt}
+            disabled={uploadingReceipt}
+            className="btn btn-primary text-[10px] px-3 py-1 rounded-md"
+          >
+            {uploadingReceipt ? 'Uploading...' : 'Upload Receipt'}
+          </button>
+        </div>
+        <div className="space-y-3">
+          {paymentHistory.map(txn => (
+            <div key={txn.id} className="flex flex-col gap-2 p-3 bg-slate-50 border border-slate-100 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-slate-800">{txn.id}</div>
+                  <div className="text-[10px] text-gray-500">{txn.date}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs font-bold text-emerald-600">₹{txn.amount}</div>
+                  <span className="px-2 py-0.5 mt-1 inline-block rounded-md text-[9px] font-bold uppercase bg-emerald-50 text-emerald-600 border border-emerald-200">
+                    {txn.status}
+                  </span>
+                </div>
+              </div>
+              <div className="border-t border-slate-200 pt-2 flex justify-end">
+                <a 
+                   href="#"
+                   onClick={(e) => { e.preventDefault(); alert(`Downloading Receipt ${txn.receipt}...`); }} 
+                   className="text-[10px] text-primary-500 font-semibold hover:underline flex items-center gap-1"
+                >
+                  📥 Download Receipt
+                </a>
+              </div>
             </div>
           ))}
         </div>

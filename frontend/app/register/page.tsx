@@ -44,7 +44,11 @@ export default function RegisterPage() {
     avgWeeklyEarnings: '',
     hoursPerDay: '',
     daysWorkedThisWeek: '6',
+    payoutMethod: 'upi',
     upiId: '',
+    bankAccount: '',
+    ifscCode: '',
+    plan: 'Medium',
     wantInsurance: true,
   });
 
@@ -115,6 +119,17 @@ export default function RegisterPage() {
       daysWorked,
       14, // assume 14 active days for new registration
     );
+    
+    // Apply plan multiplier
+    let planMultiplier = 1;
+    if (form.plan === 'Pro') planMultiplier = 1.5;
+    if (form.plan === 'Basic') planMultiplier = 0.8;
+    
+    result.weeklyPremium = Math.round(result.weeklyPremium * planMultiplier);
+    if (result.maxPayoutPerWeek) {
+      result.maxPayoutPerWeek = Math.round(result.maxPayoutPerWeek * planMultiplier);
+    }
+    
     setPremiumResult(result);
 
     setTimeout(() => {
@@ -129,7 +144,7 @@ export default function RegisterPage() {
           city: finalCity,
           avgWeeklyEarnings: parseFloat(form.avgWeeklyEarnings) || 4200,
           hoursPerDay: parseInt(form.hoursPerDay) || 8,
-          upiId: form.upiId,
+          upiId: form.payoutMethod === 'upi' ? form.upiId : `${form.bankAccount}@${form.ifscCode}`,
         },
         {
           id: `POL-${Date.now()}`,
@@ -336,9 +351,63 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold tracking-widest text-gray-500 uppercase mb-1.5">UPI ID (for payouts)</label>
-              <input className="input-field" value={form.upiId} onChange={e => update('upiId', e.target.value)} placeholder="name@upi" />
+              <label className="block text-[11px] font-bold tracking-widest text-gray-500 uppercase mb-1.5">Payout Method</label>
+              <div className="flex gap-2 mb-3">
+                <button
+                  onClick={() => update('payoutMethod', 'upi')}
+                  className={`flex-1 py-2 text-sm font-semibold rounded-lg border transition-all ${form.payoutMethod === 'upi' ? 'bg-primary-50 border-primary-500 text-primary-600' : 'bg-white border-slate-200 text-slate-500'}`}
+                >
+                  UPI ID
+                </button>
+                <button
+                  onClick={() => update('payoutMethod', 'bank')}
+                  className={`flex-1 py-2 text-sm font-semibold rounded-lg border transition-all ${form.payoutMethod === 'bank' ? 'bg-primary-50 border-primary-500 text-primary-600' : 'bg-white border-slate-200 text-slate-500'}`}
+                >
+                  Bank Account
+                </button>
+              </div>
+
+              {form.payoutMethod === 'upi' ? (
+                <div>
+                  <label className="block text-[11px] font-bold tracking-widest text-gray-500 uppercase mb-1.5">UPI ID (for payouts)</label>
+                  <input className="input-field" value={form.upiId} onChange={e => update('upiId', e.target.value)} placeholder="name@upi" />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold tracking-widest text-gray-500 uppercase mb-1.5">Account Number</label>
+                    <input className="input-field" value={form.bankAccount} onChange={e => update('bankAccount', e.target.value)} placeholder="123456789" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold tracking-widest text-gray-500 uppercase mb-1.5">IFSC Code</label>
+                    <input className="input-field" value={form.ifscCode} onChange={e => update('ifscCode', e.target.value.toUpperCase())} placeholder="HDFC0001" />
+                  </div>
+                </div>
+              )}
             </div>
+
+            {/* Plan selection if insurance wanted */}
+            {form.wantInsurance && (
+              <div>
+                <label className="block text-[11px] font-bold tracking-widest text-gray-500 uppercase mb-1.5 mt-4">Select Coverage Plan</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['Basic', 'Medium', 'Pro'].map((planOptions) => (
+                    <div 
+                      key={planOptions}
+                      onClick={() => update('plan', planOptions)}
+                      className={`cursor-pointer rounded-xl border p-3 text-center transition-all ${form.plan === planOptions ? 'bg-emerald-50 border-emerald-500 shadow-sm' : 'bg-white border-slate-200 text-slate-500'}`}
+                    >
+                      <div className={`font-bold ${form.plan === planOptions ? 'text-emerald-700' : 'text-slate-600'}`}>{planOptions}</div>
+                      <div className="text-[10px] mt-1 text-slate-500">
+                        {planOptions === 'Basic' && '80% Covex'}
+                        {planOptions === 'Medium' && 'Default'}
+                        {planOptions === 'Pro' && '150% Covex'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* insurance opt-in / opt-out */}
             <div className="glass-card p-4 flex items-center justify-between">
@@ -362,7 +431,7 @@ export default function RegisterPage() {
 
           <button
             onClick={handleCalculatePremium}
-            disabled={!form.name.trim() || !form.avgWeeklyEarnings || !form.hoursPerDay || !form.upiId.trim()}
+            disabled={!form.name.trim() || !form.avgWeeklyEarnings || !form.hoursPerDay || (form.payoutMethod === 'upi' ? !form.upiId.trim() : (!form.bankAccount.trim() || !form.ifscCode.trim()))}
             className="btn btn-primary w-full text-base font-bold py-4 rounded-xl mt-6 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {form.wantInsurance ? 'Calculate My Premium →' : 'Complete Registration →'}

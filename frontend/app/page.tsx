@@ -32,8 +32,8 @@ export default function SplashPage() {
         </div>
       </div>
 
-      {/* Button fixed at bottom */}
-      <div className="relative z-10 w-full max-w-sm pb-8">
+      {/* Action buttons */}
+      <div className="relative z-10 w-full max-w-sm pb-8 flex flex-col gap-3">
         <button
           onClick={() => router.push('/register')}
           className="w-full py-4 rounded-xl text-lg font-bold bg-primary-500 text-white shadow-[0_8px_20px_rgba(249,115,22,0.4)] hover:bg-primary-600 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group"
@@ -41,6 +41,27 @@ export default function SplashPage() {
           Get Started
           <span className="group-hover:translate-x-1 transition-transform">→</span>
         </button>
+        <button
+          onClick={() => router.push('/login')}
+          className="w-full py-3 rounded-xl text-base font-bold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+        >
+          Login with Policy Key
+        </button>
+      </div>
+
+      {/* FAQ Section */}
+      <div className="relative z-10 w-full max-w-sm pb-8">
+        <h3 className="text-lg font-bold mb-4 text-center">Frequently Asked Questions</h3>
+        <div className="space-y-3">
+          <div className="bg-slate-800/80 p-4 rounded-xl border border-slate-700">
+            <h4 className="font-semibold text-sm mb-1 text-primary-400">How do payouts work?</h4>
+            <p className="text-xs text-slate-400 leading-relaxed">Claims are paid instantly and automatically to your linked UPI or Bank Account when parametric triggers are met.</p>
+          </div>
+          <div className="bg-slate-800/80 p-4 rounded-xl border border-slate-700">
+            <h4 className="font-semibold text-sm mb-1 text-primary-400">Which plans cover me?</h4>
+            <p className="text-xs text-slate-400 leading-relaxed">We offer Basic, Medium, and Pro tiers tailored to your coverage needs. You select this during profile setup.</p>
+          </div>
+        </div>
       </div>
     </div>
   );
