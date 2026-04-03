@@ -12,6 +12,19 @@
 ---
 </div>
 
+## 📚 Table of Contents
+
+- [⚠️ Scope & Constraints](#-scope--critical-constraints)
+- [👥 Persona](#-1-persona--sub-category-focus)
+- [🌪️ Disruptions](#-2-core-disruptions--parametric-triggers-defined-100-automated)
+- [🏗️ Architecture](#-3-system-architecture-optimized-for-automation--speed)
+- [💰 Premium Model](#-5-the-weekly-premium-model)
+- [🧠 AI Strategy](#-6-practical-ai--ml-integration-strategy)
+- [📱 UI Prototype](#-8-ui-prototype--high-fidelity-screens)
+- [🏆 Phase 2](#-phase-2-automation--protect)
+
+---
+
 ## ⚠️ Scope & Critical Constraints
 - **Coverage Scope**: **Strictly LOSS OF INCOME ONLY.** The platform provides a financial safety net for lost wages due to external disruptions. It explicitly **excludes** coverage for health, life, accidents, or vehicle repairs.
 - **Financial Model**: 100% **Weekly pricing basis** to perfectly match the payout cycle and cash flow of gig workers.
