@@ -159,8 +159,8 @@ _Note: For Phase 1, we focus on a High-Utility, Clean Mobile UI to avoid the "Ba
 ## 🔗 9. Phase 1 Deliverables Links
 
 - **GitHub Repository:** [https://github.com/anshika1179/ShiftSafe-DT](https://github.com/anshika1179/ShiftSafe-DT)
-- **Live Prototype:** [https://dev-trails-prototype.vercel.app/](https://dev-trails-prototype.vercel.app/)
-- **Phase 1 Strategy & Prototype Video:** [▶️ Watch Demo](https://youtu.be/Dlwt3ch3y5A) _(Focus: Showing the end-to-end automated claim flow)_
+- **Live Prototype:** [https://shift-safe-dt-frontend-livid.vercel.app/](https://shift-safe-dt-frontend-livid.vercel.app/)
+- **Strategy & Prototype Video:** [▶️ Watch Demo](https://drive.google.com/file/d/1ix3dya3Z1Aokun7tx29lQGWj5WolgCzf/view?usp=drive_link) _(Focus: Showing the end-to-end automated claim flow)_
 
 ---
 
