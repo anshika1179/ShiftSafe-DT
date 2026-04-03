@@ -10,7 +10,8 @@
 
 _An AI-enabled parametric micro-insurance platform empowering platform-based delivery partners against uncontrollable income loss._
 
-> 🏆 **Live Demo:** [https://shift-safe-dt-frontend-livid.vercel.app](https://shift-safe-dt-frontend-livid.vercel.app)
+> 🏆 **Live Demo:** [https://shift-safe-dt-frontend-livid.vercel.app](https://shift-safe-dt-frontend-livid.vercel.app)  
+> 📊 **Pitch Deck:** [View Presentation](https://docs.google.com/presentation/d/1eJckGP3-lfbzZO8o3h-LbPPiqFjLASzguZZHBeRzLW0/edit?usp=sharing)
 
 ---
 
