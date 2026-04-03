@@ -600,13 +600,13 @@ Instead of using Generative AI (LLMs) to determine financial risk—which is ban
 | **Fraud Engine**         | Isolation Forest (simulated)      | 6-rule hybrid scoring (0-100), pre-payment check                                                                       |
 | **Weather Intelligence** | Historical risk recommendations   | 5-year IMD + CPCB data-based monthly tips                                                                              |
 | **CI/CD**                | GitHub Actions + CodeQL           | Automated build, lint, and security scanning                                                                           |
-| **Deployment**           | Vercel (live)                     | Next.js-optimized serverless hosting — [shift-safe-dt-frontend.vercel.app](https://shift-safe-dt-frontend.vercel.app/) |
+| **Deployment**           | Vercel (live)                     | Next.js-optimized serverless hosting — [shift-safe-dt-frontend-livid.vercel.app](https://shift-safe-dt-frontend-livid.vercel.app/) |
 
 ---
 
 ## 🚀 Deployment — Full Stack Architecture
 
-> **Live URL:** [https://shift-safe-dt-frontend.vercel.app/](https://shift-safe-dt-frontend.vercel.app/)
+> **Live URL:** [https://shift-safe-dt-frontend-livid.vercel.app/](https://shift-safe-dt-frontend-livid.vercel.app/)
 
 ShiftSafe-DT is a **monorepo** with two layers deployed as a single unified application on Vercel:
 
