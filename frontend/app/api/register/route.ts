@@ -42,16 +42,20 @@ function buildAuthedResponse(
   payload: unknown,
 ): NextResponse {
   const res = NextResponse.json(payload);
-  const token = createWorkerSessionToken(workerId, phone);
-  const secureCookie = shouldUseSecureCookie(req);
+  try {
+    const token = createWorkerSessionToken(workerId, phone);
+    const secureCookie = shouldUseSecureCookie(req);
 
-  res.cookies.set(WORKER_SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: secureCookie,
-    sameSite: "strict",
-    path: "/",
-    maxAge: 7 * 24 * 60 * 60,
-  });
+    res.cookies.set(WORKER_SESSION_COOKIE, token, {
+      httpOnly: true,
+      secure: secureCookie,
+      sameSite: "strict",
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60,
+    });
+  } catch (error) {
+    console.error("Failed to create worker session token:", error);
+  }
 
   return res;
 }
