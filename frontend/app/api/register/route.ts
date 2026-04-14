@@ -19,6 +19,133 @@ import {
   normalizeIndianPhone,
 } from "@/backend/utils/india-market";
 
+function isMissingWorkerPayoutColumnError(error: unknown): boolean {
+  const message = String((error as { message?: string })?.message || error)
+    .toLowerCase()
+    .trim();
+
+  const mentionsPayoutColumn =
+    message.includes("payout_method") ||
+    message.includes("upi_id") ||
+    message.includes("bank_account") ||
+    message.includes("ifsc_code");
+
+  if (!mentionsPayoutColumn) {
+    return false;
+  }
+
+  return (
+    message.includes("column") ||
+    message.includes("no such") ||
+    message.includes("does not exist") ||
+    message.includes("has no")
+  );
+}
+
+async function insertWorkerRecord(
+  db: ReturnType<typeof getDb>,
+  input: {
+    workerId: string;
+    sanitizedName: string;
+    sanitizedPhone: string;
+    safeEmail: string | null;
+    safePlatform: string;
+    safeCity: string;
+    safeZone: string;
+    shiftType: string;
+    safeIncome: number;
+    vehicleType: string;
+    insuranceOptedOut: boolean;
+    normalizedPayoutMethod: string;
+    safeUpiId: string;
+    safeBankAccount: string | null;
+    safeIfscCode: string | null;
+    safeActiveDays: number;
+    safeDaysWorked: number;
+    activityTier: string;
+  },
+): Promise<void> {
+  const {
+    workerId,
+    sanitizedName,
+    sanitizedPhone,
+    safeEmail,
+    safePlatform,
+    safeCity,
+    safeZone,
+    shiftType,
+    safeIncome,
+    vehicleType,
+    insuranceOptedOut,
+    normalizedPayoutMethod,
+    safeUpiId,
+    safeBankAccount,
+    safeIfscCode,
+    safeActiveDays,
+    safeDaysWorked,
+    activityTier,
+  } = input;
+
+  try {
+    await db
+      .prepare(
+        `INSERT INTO workers (id, name, phone, email, platform, city, zone, shift_type, avg_weekly_income, vehicle_type, insurance_opted_out, payout_method, upi_id, bank_account, ifsc_code, active_delivery_days, days_worked_this_week, activity_tier)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        workerId,
+        sanitizedName,
+        sanitizedPhone,
+        safeEmail,
+        safePlatform,
+        safeCity,
+        safeZone,
+        shiftType || "full_day",
+        safeIncome,
+        vehicleType || "bike",
+        insuranceOptedOut ? 1 : 0,
+        normalizedPayoutMethod,
+        safeUpiId,
+        safeBankAccount,
+        safeIfscCode,
+        safeActiveDays,
+        safeDaysWorked,
+        activityTier,
+      );
+  } catch (error) {
+    if (!isMissingWorkerPayoutColumnError(error)) {
+      throw error;
+    }
+
+    console.warn(
+      "workers payout columns unavailable; using legacy registration insert",
+      error,
+    );
+
+    await db
+      .prepare(
+        `INSERT INTO workers (id, name, phone, email, platform, city, zone, shift_type, avg_weekly_income, vehicle_type, insurance_opted_out, active_delivery_days, days_worked_this_week, activity_tier)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        workerId,
+        sanitizedName,
+        sanitizedPhone,
+        safeEmail,
+        safePlatform,
+        safeCity,
+        safeZone,
+        shiftType || "full_day",
+        safeIncome,
+        vehicleType || "bike",
+        insuranceOptedOut ? 1 : 0,
+        safeActiveDays,
+        safeDaysWorked,
+        activityTier,
+      );
+  }
+}
+
 function shouldUseSecureCookie(req: NextRequest): boolean {
   const host = req.nextUrl.hostname;
   const isLocalhost = host === "localhost" || host === "127.0.0.1";
@@ -249,32 +376,27 @@ export async function POST(req: NextRequest) {
       vehicleType: vehicleType || "bike",
     });
 
-    // save the worker record
-    await db
-      .prepare(
-        `INSERT INTO workers (id, name, phone, email, platform, city, zone, shift_type, avg_weekly_income, vehicle_type, insurance_opted_out, payout_method, upi_id, bank_account, ifsc_code, active_delivery_days, days_worked_this_week, activity_tier)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        workerId,
-        sanitizedName,
-        sanitizedPhone,
-        safeEmail,
-        safePlatform,
-        safeCity,
-        safeZone,
-        shiftType || "full_day",
-        safeIncome,
-        vehicleType || "bike",
-        insuranceOptedOut ? 1 : 0,
-        normalizedPayoutMethod,
-        safeUpiId,
-        safeBankAccount,
-        safeIfscCode,
-        safeActiveDays,
-        safeDaysWorked,
-        underwriting.activityTier,
-      );
+    // save the worker record (supports both current and legacy DB schemas)
+    await insertWorkerRecord(db, {
+      workerId,
+      sanitizedName,
+      sanitizedPhone,
+      safeEmail,
+      safePlatform,
+      safeCity,
+      safeZone,
+      shiftType,
+      safeIncome,
+      vehicleType,
+      insuranceOptedOut,
+      normalizedPayoutMethod,
+      safeUpiId,
+      safeBankAccount,
+      safeIfscCode,
+      safeActiveDays,
+      safeDaysWorked,
+      activityTier: underwriting.activityTier,
+    });
 
     // If worker opted out or not eligible — skip policy creation
     if (insuranceOptedOut) {
