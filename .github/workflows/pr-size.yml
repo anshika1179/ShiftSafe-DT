@@ -1,7 +1,7 @@
 name: 📊 PR Size Check
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened]
 
 permissions:
@@ -11,6 +11,7 @@ permissions:
 jobs:
   size-check:
     name: 📊 PR Size
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - name: Check PR Size
