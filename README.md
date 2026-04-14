@@ -18,6 +18,8 @@ _An AI-enabled parametric micro-insurance platform empowering platform-based del
 
 </div>
 
+---
+
 ## 📚 Table of Contents
 
 - [⚠️ Scope & Constraints](#-scope--critical-constraints)
@@ -28,6 +30,48 @@ _An AI-enabled parametric micro-insurance platform empowering platform-based del
 - [🧠 AI Strategy](#-6-practical-ai--ml-integration-strategy)
 - [📱 UI Prototype](#-8-ui-prototype--high-fidelity-screens)
 - [🏆 Phase 2](#-phase-2-automation--protect)
+- [🚀 Production Setup](#-production-setup)
+
+---
+
+## 🚀 Production Setup
+
+ShiftSafe-DT now includes production hardening for secrets, admin auth, rate limiting, and health checks.
+
+### 1. Configure Required Environment Variables
+
+Copy `.env.example` to your deployment environment and set at minimum:
+
+- `CRON_SECRET`
+- `ADMIN_EMAIL`
+- `ADMIN_PASSWORD_HASH` (SHA-256)
+- `ADMIN_SESSION_SECRET`
+- `WORKER_SESSION_SECRET`
+
+Optional but recommended:
+
+- `DATABASE_URL` (Neon Postgres connection string)
+- `NEON_QUERY_RETRIES` (default `2`, retries transient network failures)
+- `NEON_QUERY_RETRY_DELAY_MS` (default `150`, exponential backoff base in ms)
+- `OPENWEATHER_API_KEY`
+- `AQICN_API_KEY`
+- `OTP_DEMO_CODE` (demo environments only)
+
+Data persistence now defaults to Neon Postgres when `DATABASE_URL` is set. Local SQLite fallback (`.data/shiftsafe.db`) is used only when `DATABASE_URL` is not configured.
+
+### 2. Verify Core Production Endpoints
+
+- Health check: `GET /api/health`
+- Admin login/session: `POST /api/admin/login`, `GET /api/admin/session`
+- Trigger automation: `GET /api/triggers/cron` (requires `Authorization: Bearer <CRON_SECRET>`)
+
+### 3. Security Controls Enabled
+
+- HTTP-only signed admin session cookie
+- Timing-safe secret comparisons
+- Route-level rate limiting on sensitive APIs (register, claims, policies, triggers, OTP, admin login)
+- Stronger fraud scoring with geofence and anomaly signals
+- Trigger monitor run telemetry persisted for auditability
 
 ---
 
@@ -39,6 +83,7 @@ _An AI-enabled parametric micro-insurance platform empowering platform-based del
 ---
 
 ## 👥 1. Persona & Sub-Category Focus
+
 **Sub-Category**: Food Delivery Partners (e.g., Zomato, Swiggy)
 
 **Persona Strategy**:
@@ -180,7 +225,7 @@ _Note: For Phase 1, we focus on a High-Utility, Clean Mobile UI to avoid the "Ba
 [![Next.js](https://img.shields.io/badge/Next.js-16.2.1-black?style=for-the-badge&logo=next.js)](#)
 [![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react)](#)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Strict-3178C6?style=for-the-badge&logo=typescript)](#)
-[![SQLite](https://img.shields.io/badge/SQLite-WAL_Mode-003B57?style=for-the-badge&logo=sqlite)](#)
+[![Neon](https://img.shields.io/badge/Neon-Serverless_Postgres-00E699?style=for-the-badge)](#)
 [![Tailwind](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=for-the-badge&logo=tailwindcss)](#)
 
 </div>
@@ -207,15 +252,64 @@ Plus: **Historical weather-based risk intelligence**, **2 live stress test scena
 
 ## ✅ Phase 2 Mandatory Requirements — 100% Implemented
 
-|  #  | Requirement                     | Implementation                                                                                                                                                                                                                                                                                                                                                                              |            API            | Status |
-| :-: | :------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :-----------------------: | :----: |
-|  1  | **Registration & Login**        | Frictionless onboarding (Phone → OTP `123456` → Profile) with **city selection**, **dynamic zone dropdowns**, **bank/UPI payout methods**, and **coverage plans (Basic/Medium/Pro)**. Returning users can **Login** instantly using their Policy Key. _Note: OTP is hardcoded to `123456` intentionally to bypass Twilio rate-limits._                                                                  |   `POST /api/register`    |   ✅   |
-|  2  | **Platform Auth & Active Map**  | The user logs into their simulated gig app dashboard. A **Live Monitoring** tab displays the user's real-time zone activity map, allowing them to capture conditions and seamlessly submit incident screenshots for claims. | N/A | ✅ |
-|  3  | **Actuarial Pricing Engine**    | The policy premium is modeled live, adjusting automatically to historical disruption data for the selected zone, platform, and worker risk data. | `GET /api/premium` | ✅ |
-|  4  | **Policy Premium Payments**     | Under the policy management section, users can upload their *Payment Receipt* to simulate purchasing premium manually, with a detailed **Payment History** and receipt download functionally. | `GET/PATCH /api/policies` | ✅ |
-|  5  | **Automated Parametric Engine** | The engine checks the external API. If the `zone` mapped matches an API condition (e.g. `clear`), coverage is active. If `closure` is detected, a claim is flagged, and the disruption amount is computed analytically based on normal working hours. | `GET /api/triggers/cron` | ✅ |
-|  6  | **1-Click Settlement / Payout** | The worker is notified via SMS/App Notification, bypassing traditional claims assessors. Payment drops immediately to the simulated target (Bank / UPI). | `GET/POST /api/claims` | ✅ |
-|  7  | **Admin Command Center**        | A fully functioning administrative dashboard **secured via email/PIN authentication**, showing platform stats, API health, fraud flagging scores, and global overrides for stress testing (e.g., triggering global risk events). | `frontend/app/admin` | ✅ |
+|  #  | Requirement                     | Implementation                                                                                                                                                                                                                                                                                              |            API            | Status |
+| :-: | :------------------------------ | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-----------------------: | :----: |
+|  1  | **Registration & Login**        | Frictionless onboarding (Phone → OTP verification → Profile) with **city selection**, **dynamic zone dropdowns**, **bank/UPI payout methods**, and **coverage plans (Basic/Medium/Pro)**. OTP verification is now server-side and controlled via environment configuration for production-safe deployments. |   `POST /api/register`    |   ✅   |
+|  2  | **Platform Auth & Active Map**  | The user logs into their simulated gig app dashboard. A **Live Monitoring** tab displays the user's real-time zone activity map, allowing them to capture conditions and seamlessly submit incident screenshots for claims.                                                                                 |            N/A            |   ✅   |
+|  3  | **Actuarial Pricing Engine**    | The policy premium is modeled live, adjusting automatically to historical disruption data for the selected zone, platform, and worker risk data.                                                                                                                                                            |    `GET /api/premium`     |   ✅   |
+|  4  | **Policy Premium Payments**     | Under the policy management section, users can upload their _Payment Receipt_ to simulate purchasing premium manually, with a detailed **Payment History** and receipt download functionally.                                                                                                               | `GET/PATCH /api/policies` |   ✅   |
+|  5  | **Automated Parametric Engine** | The engine checks the external API. If the `zone` mapped matches an API condition (e.g. `clear`), coverage is active. If `closure` is detected, a claim is flagged, and the disruption amount is computed analytically based on normal working hours.                                                       | `GET /api/triggers/cron`  |   ✅   |
+|  6  | **1-Click Settlement / Payout** | The worker is notified via SMS/App Notification, bypassing traditional claims assessors. Payment drops immediately to the simulated target (Bank / UPI).                                                                                                                                                    |  `GET/POST /api/claims`   |   ✅   |
+|  7  | **Admin Command Center**        | A fully functioning administrative dashboard **secured via email/PIN authentication**, showing platform stats, API health, fraud flagging scores, and global overrides for stress testing (e.g., triggering global risk events).                                                                            |   `frontend/app/admin`    |   ✅   |
+
+### 🔬 Phase 2 AI/ML Enhancements (Judge Update)
+
+To strengthen our Phase 2 judging readiness, we added a deeper explainability layer and a new interactive AI/ML experience:
+
+- **AI/ML Lab (New Interface Tab in `/analytics`)**
+  - Scenario-based premium simulation with live inputs (city, income, forecast, activity, claims history).
+  - Shows **model confidence score**, volatility-driven anomaly signals, and **next-week payout prediction band** (optimistic / baseline / stressed).
+
+- **Premium Engine Intelligence Upgrade**
+  - Added deterministic ML-style diagnostics:
+    - `fraudProbability`
+    - `weatherRiskVolatility`
+    - `anomalyDetected`
+  - Added confidence model output:
+    - confidence score + label (low/medium/high)
+    - explainable rationale entries for judge transparency.
+
+- **Operational Model Health Integration**
+  - `/api/ml/health` now powers live model diagnostics in UI.
+  - Runtime self-test and telemetry are shown separately to avoid false negative model signals during transient infra/network issues.
+
+- **UI Refresh for Analytics Experience**
+  - New high-signal cards and diagnostics surfaces for judges.
+  - Better visual hierarchy for risk, confidence, and explainability outputs.
+
+- **India-Market Readiness Hardening (New)**
+  - Canonical city normalization for Indian aliases (`Bangalore` → `Bengaluru`, `Gurgaon` → `Gurugram`, `Delhi NCR` → `Delhi`) so actuarial tiering and pool mapping stay accurate.
+  - Stricter Indian mobile validation (10-digit numbers starting with 6-9) across register/login/OTP APIs and UI forms.
+
+- **Live GPS Verification Flow (New)**
+  - Added `/api/gps/verify` to compare worker device coordinates with mapped zone coordinates.
+  - Monitoring page now performs browser GPS checks, surfaces distance + accuracy, and passes GPS telemetry to fraud scoring during claim filing.
+
+**Key files involved:**
+
+- `backend/src/engines/premium-engine.ts`
+- `backend/src/utils/india-market.ts`
+- `frontend/app/api/premium/route.ts`
+- `frontend/app/api/ml/health/route.ts`
+- `frontend/app/api/gps/verify/route.ts`
+- `frontend/app/analytics/page.tsx`
+- `frontend/app/monitoring/page.tsx`
+
+### What is still manual (cannot be auto-done safely)
+
+- Allow browser location permission during demo so live GPS verification can run on `/monitoring`.
+- Set production secrets (`CRON_SECRET`, `ADMIN_SESSION_SECRET`, `WORKER_SESSION_SECRET`, `DATABASE_URL`) in deployment environment.
+- Configure optional oracle keys (`OPENWEATHER_API_KEY`, `AQICN_API_KEY`) for real-world triggers beyond simulation mode.
 
 ---
 
@@ -532,7 +626,7 @@ npm run dev
 **Evaluator / Demo Credentials:**
 
 - Phone: Any 10-digit number (e.g., `9876543210`)
-- OTP: `123456`
+- OTP: Set via `OTP_DEMO_CODE` (and optional UI hint `NEXT_PUBLIC_DEMO_OTP_HINT`) in demo environments
 
 ---
 
@@ -544,10 +638,10 @@ _A transparent breakdown of what is live, what is simulated, and **why**, demons
 
 Instead of using Generative AI (LLMs) to determine financial risk—which is banned by financial regulators as a "black box" algorithm—we built a **Deterministic Heuristic Engine** (`actuarial-engine.ts`) and an **Anomaly Detection Matrix** (`fraud-engine.ts`) directly into our Node.js backend. This allows our risk calculations to instantly compute based on strict weights (City Tiers, Frequency Velocity, Seasonal Multipliers) without 3-second API latency. It proves mathematical explainability, which is mandatory for InsurTech.
 
-#### 2. Frictionless Authentication (Twilio Bypass)
+#### 2. Frictionless Authentication (Demo-safe OTP with Production Guards)
 
-**What:** OTP is hardcoded to `123456`.
-**Why:** Relying on real telecom APIs during live pitch demos frequently results in delayed texts or rate-limit blocking on trial accounts. Hardcoding the OTP guarantees that any judge or evaluator can instantly test the end-to-end platform using their own mobile device with zero friction.
+**What:** OTP verification runs through a server endpoint with rate limiting and environment-based configuration.
+**Why:** Demo environments can set `OTP_DEMO_CODE` for smooth walkthroughs, while production no longer relies on an in-browser hardcoded OTP value.
 
 #### 3. Real Atmospheric Oracles vs. Simulated Events
 
@@ -576,6 +670,7 @@ Instead of using Generative AI (LLMs) to determine financial risk—which is ban
 |   `POST`    | `/api/register`      | Register worker + underwrite + auto-create policy          |  —   |
 |    `GET`    | `/api/premium`       | Calculate dynamic premium (v3.0 formula)                   |  —   |
 |    `GET`    | `/api/dashboard`     | Stats snapshot + historical weather recommendations        |  —   |
+|   `POST`    | `/api/gps/verify`    | Verify worker GPS vs mapped zone (distance + accuracy)     |  —   |
 | `GET/POST`  | `/api/claims`        | List claims / Create new claim through settlement pipeline |  —   |
 | `GET/PATCH` | `/api/policies`      | List policies / Cancel or reactivate coverage              |  —   |
 | `GET/POST`  | `/api/actuarial`     | BCR snapshot + stress test results / Run stress scenario   |  —   |
@@ -586,21 +681,21 @@ Instead of using Generative AI (LLMs) to determine financial risk—which is ban
 
 ## 🛠️ Tech Stack
 
-| Layer                    | Technology                        | Purpose                                                                                                                |
-| :----------------------- | :-------------------------------- | :--------------------------------------------------------------------------------------------------------------------- |
-| **Framework**            | Next.js 16.2.1 + Turbopack        | Fullstack App Router with 8 API routes                                                                                 |
-| **Frontend**             | React 19 + Tailwind CSS v4        | Glassmorphism UI with micro-animations                                                                                 |
-| **Charts**               | Chart.js 4.4.1 (CDN)              | Weekly coverage bar charts                                                                                             |
-| **State**                | React Context API                 | Client-side state with simulation                                                                                      |
-| **Backend DB**           | SQLite (better-sqlite3, WAL mode) | 100% parameterized queries, FK enforcement, 9 tables                                                                   |
-| **Premium Engine**       | Parametric Pricing v3.0           | Formula-based with city pools + 12-month seasonal calendar                                                             |
-| **Underwriting**         | Activity-Based Classification     | Min 7 days, 3 tiers, 2 city pools                                                                                      |
-| **Actuarial**            | BCR + Stress Testing              | Target 0.55-0.70, 2 live scenarios with SVG gauge                                                                      |
-| **Settlement**           | 5-Step Pipeline                   | UPI/IMPS/Razorpay, rollback logic, 50% payout cap                                                                      |
-| **Fraud Engine**         | Isolation Forest (simulated)      | 6-rule hybrid scoring (0-100), pre-payment check                                                                       |
-| **Weather Intelligence** | Historical risk recommendations   | 5-year IMD + CPCB data-based monthly tips                                                                              |
-| **CI/CD**                | GitHub Actions + CodeQL           | Automated build, lint, and security scanning                                                                           |
-| **Deployment**           | Vercel (live)                     | Next.js-optimized serverless hosting — [shift-safe-dt-frontend-livid.vercel.app](https://shift-safe-dt-frontend-livid.vercel.app/) |
+| Layer                    | Technology                      | Purpose                                                                                                                            |
+| :----------------------- | :------------------------------ | :--------------------------------------------------------------------------------------------------------------------------------- |
+| **Framework**            | Next.js 16.2.1 + Turbopack      | Fullstack App Router with 8 API routes                                                                                             |
+| **Frontend**             | React 19 + Tailwind CSS v4      | Glassmorphism UI with micro-animations                                                                                             |
+| **Charts**               | Chart.js 4.4.1 (CDN)            | Weekly coverage bar charts                                                                                                         |
+| **State**                | React Context API               | Client-side state with simulation                                                                                                  |
+| **Backend DB**           | Neon Serverless Postgres        | 100% parameterized queries, FK enforcement, 9 tables                                                                               |
+| **Premium Engine**       | Parametric Pricing v3.0         | Formula-based with city pools + 12-month seasonal calendar                                                                         |
+| **Underwriting**         | Activity-Based Classification   | Min 7 days, 3 tiers, 2 city pools                                                                                                  |
+| **Actuarial**            | BCR + Stress Testing            | Target 0.55-0.70, 2 live scenarios with SVG gauge                                                                                  |
+| **Settlement**           | 5-Step Pipeline                 | UPI/IMPS/Razorpay, rollback logic, 50% payout cap                                                                                  |
+| **Fraud Engine**         | Isolation Forest (simulated)    | 6-rule hybrid scoring (0-100), pre-payment check                                                                                   |
+| **Weather Intelligence** | Historical risk recommendations | 5-year IMD + CPCB data-based monthly tips                                                                                          |
+| **CI/CD**                | GitHub Actions + CodeQL         | Automated build, lint, and security scanning                                                                                       |
+| **Deployment**           | Vercel (live)                   | Next.js-optimized serverless hosting — [shift-safe-dt-frontend-livid.vercel.app](https://shift-safe-dt-frontend-livid.vercel.app/) |
 
 ---
 
@@ -735,10 +830,10 @@ Auto-labels PRs by size (XS/S/M/L/XL) and applies category labels (frontend/back
 
 Set these in **Repository → Settings → Secrets and variables → Actions**:
 
-| Secret        | Value                                       | Used By                     |
-| :------------ | :------------------------------------------ | :-------------------------- |
+| Secret        | Value                                             | Used By                     |
+| :------------ | :------------------------------------------------ | :-------------------------- |
 | `PROD_URL`    | `https://shift-safe-dt-frontend-livid.vercel.app` | `parametric-automation.yml` |
-| `CRON_SECRET` | Same value as Vercel `CRON_SECRET` env var  | `parametric-automation.yml` |
+| `CRON_SECRET` | Same value as Vercel `CRON_SECRET` env var        | `parametric-automation.yml` |
 
 > ⚠️ `CRON_SECRET` must be **identical** in both Vercel (env var) and GitHub (secret). A mismatch causes the automation to fall through to Stage 2.
 
@@ -752,7 +847,7 @@ Set these in **Vercel Dashboard → Project → Settings → Environment Variabl
 | :-------------------- | :------: | :-------------------------------------------------------- |
 | `DATABASE_URL`        |    ✅    | Neon Serverless Postgres connection string                |
 | `CRON_SECRET`         |    ✅    | Bearer token protecting `/api/triggers/cron`              |
-| `NEXT_PUBLIC_APP_URL` |    ✅    | `https://shift-safe-dt-frontend-livid.vercel.app`               |
+| `NEXT_PUBLIC_APP_URL` |    ✅    | `https://shift-safe-dt-frontend-livid.vercel.app`         |
 | `OPENWEATHER_API_KEY` | Optional | Live rainfall/temperature data (falls back to simulation) |
 | `AQICN_API_KEY`       | Optional | Live AQI pollution data (falls back to simulation)        |
 
@@ -796,7 +891,7 @@ graph TD;
     I[😷 AQI Monitor] -->|Pollution Data| B;
     J[📱 Platform Health] -->|Outage Detection| B;
 
-    C --> K[(SQLite + WAL)];
+    C --> K[(Neon Serverless Postgres)];
     D --> K;
     E --> K;
     F --> K;
@@ -858,7 +953,7 @@ ShiftSafe-DT/
 │       │   ├── settlement-engine.ts      💸 5-step payout pipeline
 │       │   └── fraud-engine.ts           🔍 Isolation Forest scoring
 │       ├── models/
-│       │   └── db.ts                     SQLite schema (9 tables, WAL, FK)
+│       │   └── db.ts                     Neon-first DB adapter + schema bootstrap
 │       ├── services/
 │       │   └── triggers.ts              Weather, AQI, outage monitoring
 │       └── utils/
@@ -1025,7 +1120,7 @@ Costs:
 
 ## 🔗 Phase 2 Deliverables & Submission Links
 
-- 🌐 **Live Deployed Platform:** [ShiftSafe-DT on Vercel](https://shift-safe-dt-frontend-livid.vercel.app/) _(Login Demo: `9876543210` / `123456`)_
+- 🌐 **Live Deployed Platform:** [ShiftSafe-DT on Vercel](https://shift-safe-dt-frontend-livid.vercel.app/) _(Demo OTP is environment-configured)_
 - ▶️ **Phase 2 Demo Video:** [▶️ Watch Full System Demo](https://drive.google.com/file/d/1ix3dya3Z1Aokun7tx29lQGWj5WolgCzf/view?usp=drive_link) _(Shows zero-touch automation and acturial stress testing!)_
 - 📊 **Pitch Presentation (PPT):** [View Hackathon Pitch Deck](https://docs.google.com/presentation/d/1eJckGP3-lfbzZO8o3h-LbPPiqFjLASzguZZHBeRzLW0/edit?usp=sharing)
 - 💻 **Source Code Repository:** [GitHub - ShiftSafe-DT](https://github.com/anshika1179/ShiftSafe-DT)
@@ -1043,3 +1138,49 @@ Costs:
   City Tiers = Metro (100% cap) | Urban (85% cap) | Emerging (70% cap)
   ```
 </div>
+
+## Phase 3 [April 5 - 17]: Scale & Optimise (Weeks 5-6)
+
+**Theme:** "Perfect for Your Worker"
+
+### Deliverables
+
+- Advanced Fraud Detection: Catch delivery-specific fraud (e.g., GPS spoofing, fake weather claims using historical data).
+- Instant Payout System (Simulated): Integrate mock payment gateways (Razorpay test mode, Stripe sandbox, or UPI simulators) to demonstrate how the worker receives their lost wages instantly.
+- Intelligent Dashboard.
+  - For Workers: Earnings protected, active weekly coverage.
+  - For Insurers (Admin): Loss ratios, predictive analytics on next week's likely weather/disruption claims.
+- The Final Submission Package. Consolidate your 6 weeks of development into the final artefacts required for Week 6 judging. You must upload:
+  - A 5-minute demo video: A screen-capture walkthrough video of your platform in action uploaded to a publicly accessible link. You must visually demonstrate a simulated external disruption (e.g., triggering a fake rainstorm) and show the automated AI claim approval and payout process.
+  - Final Pitch Deck: Your presentation slides (PDF) covering your specific delivery persona, your AI & fraud architecture, and the business viability of your Weekly pricing model.
+
+### Implementation Status (Code Complete)
+
+- Advanced Fraud Detection
+  - Isolation Forest (100 trees, depth 10) + rule-based explainability layer.
+  - GPS/geofence checks, spoof detection, duplicate-claim detection, retroactive policy checks.
+  - Integrated in worker claim creation and CRON-driven automated trigger monitoring.
+  - Key files:
+    - `backend/src/engines/fraud-engine.ts`
+    - `frontend/app/api/claims/route.ts`
+    - `frontend/app/api/triggers/cron/route.ts`
+
+- Instant Payout System (Simulated)
+  - Channel orchestration with UPI (primary), IMPS bank transfer (fallback), and sandbox fallback.
+  - Admin approval triggers settlement, transaction reference generation, and persistent settlement records.
+  - Worker payout preference is persisted at registration (UPI/bank details).
+  - Key files:
+    - `backend/src/engines/settlement-engine.ts`
+    - `frontend/app/api/admin/claims/route.ts`
+    - `frontend/app/api/register/route.ts`
+
+- Intelligent Dashboards
+  - Worker dashboards: live protection status, claim timeline, weather-risk recommendations.
+  - Admin dashboards: loss ratio/BCR, queue operations, predictive next-week claims/payout projections, automation telemetry.
+  - Support + dispute management and risk-bonus management are fully wired for admin and workers.
+  - Key files:
+    - `frontend/app/dashboard/page.tsx`
+    - `frontend/app/analytics/page.tsx`
+    - `frontend/app/admin/page.tsx`
+    - `frontend/app/service-requests/page.tsx`
+    - `frontend/app/api/dashboard/route.ts`
