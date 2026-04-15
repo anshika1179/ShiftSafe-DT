@@ -224,6 +224,10 @@ export async function GET(req: Request) {
                 Math.round(worker.avg_weekly_income / 7),
               ),
               claimsLast30Days: claimsLast30Days?.cnt || 0,
+              triggerLocation: {
+                lat: checks.zoneContext.lat,
+                lon: checks.zoneContext.lon,
+              },
               gpsAccuracyMeters: 35,
               travelSpeedKmph: 28,
               zoneRadiusKm: 5,

@@ -75,11 +75,14 @@ function clamp(v: number, min: number, max: number): number {
 
 /* ─── Feature Engineering ─── */
 function extractFeatures(input: FraudInput): number[] {
+  const hasPreciseGps =
+    input.workerLocation !== undefined && input.triggerLocation !== undefined;
+
   const distanceKm =
     input.distanceFromZone ??
-    (input.workerLocation && input.triggerLocation
-      ? haversineKm(input.workerLocation, input.triggerLocation)
-      : 0.8);
+    (hasPreciseGps
+      ? haversineKm(input.workerLocation!, input.triggerLocation!)
+      : 0);
 
   const gpsAccuracy = input.gpsAccuracyMeters ?? 20;
   const speed = input.travelSpeedKmph ?? 28;
@@ -239,6 +242,18 @@ function computeAnomalyScore(features: number[]): {
 function computeRuleFlags(features: number[], input: FraudInput): string[] {
   const flags: string[] = [];
   const [dist, gps, speed, ratio, freq, dup, inactive] = features;
+  const hasWorkerGeo = Boolean(input.workerLocation);
+  const hasTriggerGeo = Boolean(input.triggerLocation);
+
+  if (!hasWorkerGeo || !hasTriggerGeo) {
+    flags.push("GPS_DATA_INCOMPLETE");
+  }
+  if (hasWorkerGeo && !hasTriggerGeo) {
+    flags.push("MISSING_TRIGGER_LOCATION");
+  }
+  if (!hasWorkerGeo && hasTriggerGeo) {
+    flags.push("MISSING_WORKER_LOCATION");
+  }
 
   if (dist > (input.zoneRadiusKm ?? 5)) flags.push("GPS_GEOFENCE_BREACH");
   if (gps > 120) flags.push("LOW_GPS_ACCURACY");
@@ -268,6 +283,9 @@ export function detectFraudAdvanced(input: FraudInput): FraudResult {
   // Hybrid: ML anomaly score (60%) + rule severity bonus (40%)
   let ruleBonus = 0;
   if (flags.includes("RETROACTIVE_CLAIM")) ruleBonus += 30;
+  if (flags.includes("GPS_DATA_INCOMPLETE")) ruleBonus += 8;
+  if (flags.includes("MISSING_WORKER_LOCATION")) ruleBonus += 6;
+  if (flags.includes("MISSING_TRIGGER_LOCATION")) ruleBonus += 6;
   if (flags.includes("GPS_GEOFENCE_BREACH")) ruleBonus += 18;
   if (flags.includes("DUPLICATE_CLAIM")) ruleBonus += 15;
   if (flags.includes("IMPOSSIBLE_SPEED")) ruleBonus += 12;
