@@ -451,7 +451,21 @@ export default function RegisterPage() {
                   }}
                   type="tel"
                   maxLength={10}
+                  autoComplete="off"
                 />
+                {phone && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPhone("");
+                      setPhoneError("");
+                    }}
+                    className="flex items-center justify-center px-3 bg-slate-50 border-l border-slate-200 hover:bg-slate-100 transition-colors"
+                    title="Clear phone number"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
               {phoneError && (
                 <p className="mt-2 text-xs font-medium text-red-500">

@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/backend/models/db";
 import { detectFraudAdvanced } from "@/backend/engines/fraud-engine";
+import { resolveZoneContext } from "@/backend/services/triggers";
 import {
   consumeRateLimit,
   getClientIp,
@@ -90,6 +91,17 @@ export async function POST(req: NextRequest) {
       String(zone || "Andheri West")
         .trim()
         .slice(0, 80) || "Andheri West";
+    const safeCity =
+      String(body?.city || "Mumbai")
+        .trim()
+        .slice(0, 60) || "Mumbai";
+
+    const parsedWorkerLocation = parseLocation(workerLocation);
+    let parsedTriggerLocation = parseLocation(triggerLocation);
+    if (!parsedTriggerLocation) {
+      const zoneContext = await resolveZoneContext(safeZone, safeCity);
+      parsedTriggerLocation = { lat: zoneContext.lat, lon: zoneContext.lon };
+    }
 
     if (!sanitizedWorkerId || !sanitizedTriggerType) {
       return NextResponse.json(
@@ -223,8 +235,8 @@ export async function POST(req: NextRequest) {
       claimAmount: amount,
       dailyAverage: Math.max(1, Math.round(worker.avg_weekly_income / 7)),
       claimsLast30Days: claimsLast30Days?.cnt || 0,
-      workerLocation: parseLocation(workerLocation),
-      triggerLocation: parseLocation(triggerLocation),
+      workerLocation: parsedWorkerLocation,
+      triggerLocation: parsedTriggerLocation,
       gpsAccuracyMeters:
         typeof gpsAccuracyMeters === "number"
           ? Math.max(0, Math.min(2000, gpsAccuracyMeters))
