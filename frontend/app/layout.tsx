@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 
 import { AppProvider } from "@/frontend/components/providers/AppProvider";
+import { ThemeProvider } from "@/frontend/components/providers/ThemeProvider";
 import { TopBar, BottomNav } from "@/frontend/components/ui/Navigation";
 import {
   PushNotification,
@@ -30,14 +31,28 @@ const inter = Inter({
   display: "swap",
 });
 
+// Inline script to prevent FOUC (flash of unstyled/wrong-themed content)
+const themeScript = `
+(function(){
+  try {
+    var t = localStorage.getItem('shiftsafe-theme') || 'system';
+    var d = t === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : t;
+    document.documentElement.classList.add(d);
+  } catch(e){}
+})();
+`;
+
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#f97316" />
         <meta
@@ -54,22 +69,25 @@ export default function RootLayout({
         className={`${inter.className} antialiased bg-slate-50 text-slate-800`}
         suppressHydrationWarning
       >
-        <AppProvider>
-          <PushNotification />
-          <ToastNotification />
+        <ThemeProvider>
+          <AppProvider>
+            <PushNotification />
+            <ToastNotification />
 
-          <div className="min-h-screen flex flex-col max-w-120 mx-auto bg-white shadow-2xl overflow-hidden relative">
-            <TopBar />
+            <div className="min-h-screen flex flex-col max-w-120 mx-auto bg-white shadow-2xl overflow-hidden relative">
+              <TopBar />
 
-            {/* Scrollable Main Area */}
-            <main className="flex-1 overflow-y-auto w-full px-4 pt-4 pb-24 scroll-smooth">
-              {children}
-            </main>
+              {/* Scrollable Main Area */}
+              <main className="flex-1 overflow-y-auto w-full px-4 pt-4 pb-24 scroll-smooth">
+                {children}
+              </main>
 
-            <BottomNav />
-          </div>
-        </AppProvider>
+              <BottomNav />
+            </div>
+          </AppProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
 }
+

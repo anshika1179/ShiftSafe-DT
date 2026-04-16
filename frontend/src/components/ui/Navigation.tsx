@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
 import { useAppState } from "@/frontend/components/providers/AppProvider";
+import { useTheme } from "@/frontend/components/providers/ThemeProvider";
 
 export function BottomNav() {
   const pathname = usePathname();
@@ -58,8 +59,11 @@ export function TopBar() {
   const pathname = usePathname();
   const router = useRouter();
   const { worker, policy, signOut } = useAppState();
+  const { theme, resolvedTheme, setTheme } = useTheme();
   const [profileOpen, setProfileOpen] = useState(false);
+  const [themeOpen, setThemeOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const themeDropdownRef = useRef<HTMLDivElement>(null);
 
   // all hooks must run before any early return (React rules of hooks)
   useEffect(() => {
@@ -70,10 +74,17 @@ export function TopBar() {
       ) {
         setProfileOpen(false);
       }
+      if (
+        themeDropdownRef.current &&
+        !themeDropdownRef.current.contains(e.target as Node)
+      ) {
+        setThemeOpen(false);
+      }
     };
-    if (profileOpen) document.addEventListener("mousedown", handleClickOutside);
+    if (profileOpen || themeOpen)
+      document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [profileOpen]);
+  }, [profileOpen, themeOpen]);
 
   // hide on splash / register
   if (pathname === "/" || pathname === "/register" || pathname === "/login") {
@@ -95,6 +106,20 @@ export function TopBar() {
     router.push("/");
   };
 
+  const themeOptions: {
+    value: "light" | "dark" | "system";
+    label: string;
+    icon: string;
+    desc: string;
+  }[] = [
+    { value: "light", label: "Light", icon: "☀️", desc: "Always light" },
+    { value: "dark", label: "Dark", icon: "🌙", desc: "Always dark" },
+    { value: "system", label: "System", icon: "💻", desc: "Match device" },
+  ];
+
+  const currentThemeIcon =
+    resolvedTheme === "dark" ? "🌙" : theme === "system" ? "💻" : "☀️";
+
   return (
     <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-slate-200/60 transition-all duration-300">
       <div className="max-w-120 mx-auto px-4 h-14 flex items-center justify-between">
@@ -115,6 +140,63 @@ export function TopBar() {
             </span>
           </div>
 
+          {/* Theme Toggle */}
+          <div className="relative" ref={themeDropdownRef}>
+            <button
+              onClick={() => {
+                setThemeOpen(!themeOpen);
+                setProfileOpen(false);
+              }}
+              className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-lg shadow-sm border border-slate-200 transition-all hover:scale-105 active:scale-95"
+              aria-label="Toggle theme"
+            >
+              {currentThemeIcon}
+            </button>
+
+            {themeOpen && (
+              <div className="absolute right-0 top-12 w-52 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden fade-in z-50">
+                <div className="px-3 py-2.5 border-b border-slate-100">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                    Appearance
+                  </div>
+                </div>
+                <div className="p-1.5">
+                  {themeOptions.map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => {
+                        setTheme(opt.value);
+                        setThemeOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${
+                        theme === opt.value
+                          ? "bg-primary-50 border border-primary-200"
+                          : "hover:bg-slate-50 border border-transparent"
+                      }`}
+                    >
+                      <span className="text-lg">{opt.icon}</span>
+                      <div className="flex-1 min-w-0">
+                        <div
+                          className={`text-xs font-bold ${theme === opt.value ? "text-primary-600" : "text-slate-700"}`}
+                        >
+                          {opt.label}
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          {opt.desc}
+                        </div>
+                      </div>
+                      {theme === opt.value && (
+                        <span className="text-primary-500 text-sm font-bold">
+                          ✓
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           <Link
             href="/admin"
             className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-lg shadow-sm border border-slate-200 transition-all hover:scale-105 active:scale-95"
@@ -126,7 +208,10 @@ export function TopBar() {
           {/* Profile Avatar */}
           <div className="relative" ref={dropdownRef}>
             <button
-              onClick={() => setProfileOpen(!profileOpen)}
+              onClick={() => {
+                setProfileOpen(!profileOpen);
+                setThemeOpen(false);
+              }}
               className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md transition-all hover:scale-105 active:scale-95"
               style={{
                 background: "linear-gradient(135deg, #f97316, #ea580c)",
@@ -232,3 +317,4 @@ export function TopBar() {
     </header>
   );
 }
+
