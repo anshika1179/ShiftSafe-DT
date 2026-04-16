@@ -66,6 +66,8 @@ export default function MonitoringPage() {
   const [evidence, setEvidence] = useState<EvidenceState | null>(null);
   const evidenceInputRef = useRef<HTMLInputElement | null>(null);
   const gpsRequestRef = useRef(0);
+  const gpsCheckingRef = useRef(false);
+  const [mapZoom, setMapZoom] = useState(12);
   const [gpsState, setGpsState] = useState<GpsState>({
     status: "idle",
     message: "GPS check pending",
@@ -100,13 +102,16 @@ export default function MonitoringPage() {
       return;
     }
 
-    let shouldRun = false;
-    setGpsChecking((current) => {
-      if (current) return current;
-      shouldRun = true;
-      return true;
-    });
-    if (!shouldRun) return;
+    // Use ref for reliable concurrency check
+    if (gpsCheckingRef.current) return;
+    gpsCheckingRef.current = true;
+    setGpsChecking(true);
+
+    // Hard failsafe — ALWAYS reset after 20s no matter what
+    const failsafeTimer = setTimeout(() => {
+      gpsCheckingRef.current = false;
+      setGpsChecking(false);
+    }, 20000);
 
     const requestId = gpsRequestRef.current + 1;
     gpsRequestRef.current = requestId;
@@ -227,8 +232,10 @@ export default function MonitoringPage() {
       if (checkingWatchdog !== undefined) {
         window.clearTimeout(checkingWatchdog);
       }
+      clearTimeout(failsafeTimer);
 
       if (gpsRequestRef.current === requestId) {
+        gpsCheckingRef.current = false;
         setGpsChecking(false);
       }
     }
@@ -516,10 +523,10 @@ export default function MonitoringPage() {
       </div>
 
       <div className="glass-card overflow-hidden">
-        <div className="h-48 relative bg-slate-200 w-full">
-          {/* Simulated Map */}
+        <div className="h-56 relative bg-slate-200 w-full">
+          {/* Google Maps Embed */}
           <iframe
-            src={`https://maps.google.com/maps?q=${encodeURIComponent(mapQuery)}&t=&z=12&ie=UTF8&iwloc=&output=embed`}
+            src={`https://maps.google.com/maps?q=${encodeURIComponent(mapQuery)}&t=&z=${mapZoom}&ie=UTF8&iwloc=&output=embed`}
             width="100%"
             height="100%"
             style={{ border: 0 }}
@@ -527,6 +534,29 @@ export default function MonitoringPage() {
             loading="lazy"
             referrerPolicy="no-referrer-when-downgrade"
           ></iframe>
+
+          {/* Zoom Controls */}
+          <div className="absolute bottom-2 left-2 flex flex-col gap-1">
+            <button
+              onClick={() => setMapZoom((z) => Math.min(z + 2, 20))}
+              className="w-8 h-8 rounded-lg bg-white/95 border border-slate-200 shadow-md flex items-center justify-center text-lg font-bold text-slate-700 hover:bg-slate-50 active:bg-slate-100 transition-all"
+              title="Zoom In"
+            >
+              +
+            </button>
+            <button
+              onClick={() => setMapZoom((z) => Math.max(z - 2, 4))}
+              className="w-8 h-8 rounded-lg bg-white/95 border border-slate-200 shadow-md flex items-center justify-center text-lg font-bold text-slate-700 hover:bg-slate-50 active:bg-slate-100 transition-all"
+              title="Zoom Out"
+            >
+              −
+            </button>
+          </div>
+
+          {/* Zoom Level Indicator */}
+          <div className="absolute bottom-2 left-12 bg-white/90 px-2 py-1 rounded-md text-[9px] font-bold text-slate-500 border border-slate-200 shadow-sm">
+            {mapZoom}× Zoom
+          </div>
 
           <div className="absolute top-2 right-2 bg-white/90 p-2 rounded-lg shadow-sm border border-slate-200">
             <div className="text-[10px] uppercase font-bold text-slate-500">

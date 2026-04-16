@@ -806,7 +806,7 @@ export default function AdminDashboard() {
         : "bg-slate-100 text-slate-600";
 
   return (
-    <div className="space-y-4 max-w-6xl mx-auto fade-in pb-8 px-3 sm:px-0">
+    <div className="space-y-4 max-w-6xl mx-auto fade-in pb-8 px-4 sm:px-6">
       {/* Header */}
       <div className="glass-card p-4 sm:p-5 mt-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -843,28 +843,30 @@ export default function AdminDashboard() {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-1.5 mt-4 overflow-x-auto pb-1">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
-                tab === t.id
-                  ? "bg-slate-900 text-white shadow-md"
-                  : "bg-white text-slate-500 border border-slate-200 hover:bg-slate-50"
-              }`}
-            >
-              <span>{t.emoji}</span>
-              {t.label}
-              {t.badge !== undefined && t.badge > 0 && (
-                <span
-                  className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${tab === t.id ? "bg-white/20 text-white" : "bg-orange-100 text-orange-700"}`}
-                >
-                  {t.badge}
-                </span>
-              )}
-            </button>
-          ))}
+        <div className="mt-4 -mx-4 sm:-mx-5 px-4 sm:px-5">
+          <div className="flex items-center gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}>
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all shrink-0 ${
+                  tab === t.id
+                    ? "bg-slate-900 text-white shadow-md"
+                    : "bg-white text-slate-500 border border-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                <span>{t.emoji}</span>
+                {t.label}
+                {t.badge !== undefined && t.badge > 0 && (
+                  <span
+                    className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${tab === t.id ? "bg-white/20 text-white" : "bg-orange-100 text-orange-700"}`}
+                  >
+                    {t.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
