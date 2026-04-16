@@ -7,6 +7,8 @@ import {
   triggerToast,
 } from "@/frontend/components/ui/Notifications";
 import { getTriggerEmoji } from "@/backend/utils/store";
+import ZoneMap from "@/frontend/components/ui/ZoneMap";
+import type { WeatherData } from "@/backend/engines/weather-engine";
 
 let localClaimSequence = 0;
 
@@ -70,6 +72,8 @@ export default function MonitoringPage() {
     status: "idle",
     message: "GPS check pending",
   });
+  const [liveWeather, setLiveWeather] = useState<WeatherData | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
 
   useEffect(() => {
     if (!isBootstrapping && !isLoggedIn) router.replace("/");
@@ -238,6 +242,19 @@ export default function MonitoringPage() {
     if (isBootstrapping || !isLoggedIn) return;
     void verifyGps();
   }, [isBootstrapping, isLoggedIn, verifyGps]);
+
+  // Fetch live weather data
+  useEffect(() => {
+    if (isBootstrapping || !isLoggedIn) return;
+    setWeatherLoading(true);
+    const city = worker?.city || 'Mumbai';
+    const zone = worker?.zone || 'Andheri East';
+    fetch(`/api/weather?city=${encodeURIComponent(city)}&zone=${encodeURIComponent(zone)}`)
+      .then((r) => r.json())
+      .then((data: WeatherData) => setLiveWeather(data))
+      .catch(() => {})
+      .finally(() => setWeatherLoading(false));
+  }, [isBootstrapping, isLoggedIn, worker?.city, worker?.zone]);
 
   if (isBootstrapping) {
     return null;
@@ -463,81 +480,121 @@ export default function MonitoringPage() {
         </div>
       </div>
 
-      {/* Metrics Grid */}
+      {/* Metrics Grid — Live Weather Data */}
       <div>
-        <div className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2 px-1">
-          Live Conditions
+        <div className="flex items-center justify-between mb-2 px-1">
+          <div className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">
+            {liveWeather?.source === 'live' ? '🔴 Live Conditions' : '📡 Estimated Conditions'}
+          </div>
+          {liveWeather && (
+            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${liveWeather.source === 'live' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-amber-50 text-amber-600 border border-amber-200'}`}>
+              {liveWeather.source === 'live' ? '● LIVE' : '● ESTIMATED'}
+            </span>
+          )}
         </div>
+        {weatherLoading ? (
+          <div className="glass-card p-8 text-center">
+            <div className="w-6 h-6 mx-auto border-2 border-primary-500 border-t-transparent rounded-full animate-spin mb-2" />
+            <div className="text-xs text-gray-500">Fetching weather data...</div>
+          </div>
+        ) : (
         <div className="grid grid-cols-2 gap-3">
           {/* Rainfall */}
-          <div className="border border-red-200 bg-red-50/50 p-3 rounded-xl relative">
-            <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-            <div className="text-xl mb-1">🌧️</div>
-            <div className="text-[10px] font-bold text-gray-500 uppercase">
-              Rainfall
-            </div>
-            <div className="text-xl font-black text-red-600">65 mm</div>
-            <div className="text-[9px] text-red-500 font-bold mt-1">
-              ⚠️ Heavy Rain Detected
-            </div>
-          </div>
+          {(() => {
+            const rain = liveWeather?.rainfall ?? 0;
+            const isAlert = rain >= 30;
+            return (
+              <div className={`border p-3 rounded-xl relative ${isAlert ? 'border-red-200 bg-red-50/50' : 'border-slate-100 bg-white shadow-sm'}`}>
+                {isAlert && <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
+                <div className="text-xl mb-1">🌧️</div>
+                <div className="text-[10px] font-bold text-gray-500 uppercase">Rainfall</div>
+                <div className={`text-xl font-black ${isAlert ? 'text-red-600' : 'text-slate-800'}`}>{rain} mm</div>
+                <div className={`text-[9px] font-bold mt-1 ${isAlert ? 'text-red-500' : 'text-emerald-500'}`}>
+                  {isAlert ? '⚠️ Heavy Rain' : '✓ Normal'}
+                </div>
+              </div>
+            );
+          })()}
           {/* Temperature */}
-          <div className="border border-slate-100 bg-white p-3 rounded-xl shadow-sm">
-            <div className="text-xl mb-1">🌡️</div>
-            <div className="text-[10px] font-bold text-gray-500 uppercase">
-              Temperature
-            </div>
-            <div className="text-xl font-black text-slate-800">35°C</div>
-            <div className="text-[9px] text-slate-500 mt-1">Humidity: 72%</div>
-          </div>
+          {(() => {
+            const temp = liveWeather?.temperature ?? 30;
+            const isAlert = temp >= 38;
+            return (
+              <div className={`border p-3 rounded-xl ${isAlert ? 'border-orange-200 bg-orange-50/50' : 'border-slate-100 bg-white shadow-sm'}`}>
+                <div className="text-xl mb-1">🌡️</div>
+                <div className="text-[10px] font-bold text-gray-500 uppercase">Temperature</div>
+                <div className={`text-xl font-black ${isAlert ? 'text-orange-600' : 'text-slate-800'}`}>{temp}°C</div>
+                <div className="text-[9px] text-slate-500 mt-1">Humidity: {liveWeather?.humidity ?? 50}%</div>
+              </div>
+            );
+          })()}
           {/* AQI */}
-          <div className="border border-slate-100 bg-white p-3 rounded-xl shadow-sm">
-            <div className="text-xl mb-1">💨</div>
-            <div className="text-[10px] font-bold text-gray-500 uppercase">
-              AQI Level
-            </div>
-            <div className="text-xl font-black text-slate-800">26</div>
-            <div className="text-[9px] text-emerald-500 font-bold mt-1">
-              Good
-            </div>
-          </div>
-          {/* Traffic */}
-          <div className="border border-slate-100 bg-white p-3 rounded-xl shadow-sm">
-            <div className="text-xl mb-1">🚦</div>
-            <div className="text-[10px] font-bold text-gray-500 uppercase">
-              Traffic Ratio
-            </div>
-            <div className="text-xl font-black text-slate-800">0.80</div>
-            <div className="text-[9px] text-emerald-500 font-bold mt-1">
-              Normal flow
-            </div>
-          </div>
+          {(() => {
+            const aqi = liveWeather?.aqi ?? 50;
+            const isAlert = aqi >= 150;
+            return (
+              <div className={`border p-3 rounded-xl ${isAlert ? 'border-amber-200 bg-amber-50/50' : 'border-slate-100 bg-white shadow-sm'}`}>
+                <div className="text-xl mb-1">😷</div>
+                <div className="text-[10px] font-bold text-gray-500 uppercase">AQI Level</div>
+                <div className={`text-xl font-black ${isAlert ? 'text-amber-600' : 'text-slate-800'}`}>{aqi}</div>
+                <div className={`text-[9px] font-bold mt-1 ${isAlert ? 'text-amber-500' : 'text-emerald-500'}`}>
+                  {liveWeather?.aqiLabel || 'Good'}
+                </div>
+              </div>
+            );
+          })()}
+          {/* Wind */}
+          {(() => {
+            const wind = liveWeather?.windSpeed ?? 12;
+            const isAlert = wind >= 40;
+            return (
+              <div className={`border p-3 rounded-xl ${isAlert ? 'border-blue-200 bg-blue-50/50' : 'border-slate-100 bg-white shadow-sm'}`}>
+                <div className="text-xl mb-1">💨</div>
+                <div className="text-[10px] font-bold text-gray-500 uppercase">Wind Speed</div>
+                <div className={`text-xl font-black ${isAlert ? 'text-blue-600' : 'text-slate-800'}`}>{wind} km/h</div>
+                <div className={`text-[9px] font-bold mt-1 ${isAlert ? 'text-blue-500' : 'text-emerald-500'}`}>
+                  {isAlert ? '⚠️ Strong Wind' : '✓ Normal'}
+                </div>
+              </div>
+            );
+          })()}
         </div>
+        )}
+        {/* Active Triggers */}
+        {liveWeather && liveWeather.triggers.filter(t => t.active).length > 0 && (
+          <div className="mt-3 p-3 rounded-xl bg-red-50 border border-red-200">
+            <div className="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-2">⚠️ Active Triggers Detected</div>
+            <div className="space-y-1">
+              {liveWeather.triggers.filter(t => t.active).map(t => (
+                <div key={t.type} className="flex items-center justify-between text-[11px]">
+                  <span className="flex items-center gap-1.5">
+                    <span>{t.emoji}</span>
+                    <span className="font-semibold text-red-700">{t.type.replace(/_/g, ' ')}</span>
+                  </span>
+                  <span className="font-bold text-red-600">{t.currentValue} (threshold: {t.threshold})</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {liveWeather && (
+          <div className="mt-2 text-center text-[9px] text-slate-400 font-mono">
+            {liveWeather.icon} {liveWeather.description} · {liveWeather.city} · Source: {liveWeather.source} · {new Date(liveWeather.fetchedAt).toLocaleTimeString('en-IN')}
+          </div>
+        )}
       </div>
 
-      <div className="glass-card overflow-hidden">
-        <div className="h-48 relative bg-slate-200 w-full">
-          {/* Simulated Map */}
-          <iframe
-            src={`https://maps.google.com/maps?q=${encodeURIComponent(mapQuery)}&t=&z=12&ie=UTF8&iwloc=&output=embed`}
-            width="100%"
-            height="100%"
-            style={{ border: 0 }}
-            allowFullScreen={false}
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-          ></iframe>
+      {/* GPS Spoofing Visualization */}
+      <ZoneMap
+        workerCoords={gpsState.coords}
+        zoneName={worker?.zone || 'Andheri East'}
+        city={worker?.city || 'Mumbai'}
+        distanceKm={gpsState.distanceKm}
+        accuracyMeters={gpsState.accuracyMeters}
+        gpsStatus={gpsState.status}
+      />
 
-          <div className="absolute top-2 right-2 bg-white/90 p-2 rounded-lg shadow-sm border border-slate-200">
-            <div className="text-[10px] uppercase font-bold text-slate-500">
-              Status
-            </div>
-            <div className="text-xs font-semibold text-amber-600 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
-              Disruption detected
-            </div>
-          </div>
-        </div>
+      <div className="glass-card overflow-hidden">
 
         <div className="p-4 bg-slate-800 text-white">
           <h3 className="font-bold text-lg mb-2">

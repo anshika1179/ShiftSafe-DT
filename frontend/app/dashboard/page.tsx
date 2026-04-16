@@ -191,7 +191,24 @@ export default function DashboardPage() {
         }
       })
       .catch(() => {});
-  }, [isBootstrapping, isLoggedIn, router, worker?.id]);
+
+    // Fetch live weather data from weather engine
+    const city = worker?.city || 'Mumbai';
+    const zone = worker?.zone || 'Andheri East';
+    fetch(`/api/weather?city=${encodeURIComponent(city)}&zone=${encodeURIComponent(zone)}`)
+      .then((r) => r.json())
+      .then((w) => {
+        if (w && typeof w.temperature === 'number') {
+          setWeatherPills([
+            { label: `🌡️ ${w.temperature}°C`, color: w.temperature > 40 ? "#ef4444" : "#f97316" },
+            { label: `🌧️ ${w.rainfall}mm`, color: w.rainfall > 50 ? "#3b82f6" : "#4d9fff" },
+            { label: `😷 AQI ${w.aqi}`, color: w.aqi > 200 ? "#ef4444" : "#fbbf24" },
+            { label: `💨 ${w.windSpeed} km/h`, color: w.windSpeed > 40 ? "#3b82f6" : "#8892a4" },
+          ]);
+        }
+      })
+      .catch(() => {});
+  }, [isBootstrapping, isLoggedIn, router, worker?.id, worker?.city, worker?.zone]);
 
   if (isBootstrapping) {
     return (

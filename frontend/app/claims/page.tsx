@@ -8,6 +8,7 @@ import {
 } from "@/frontend/components/ui/Notifications";
 import { getTriggerEmoji, getTriggerName } from "@/backend/utils/store";
 import { downloadReceipt, downloadClaimsCSV } from "@/lib/receipt-generator";
+import FraudExplainer from "@/frontend/components/ui/FraudExplainer";
 
 const SIMULATOR_BUTTONS = [
   {
@@ -490,6 +491,17 @@ export default function ClaimsPage() {
                   )}
                 </div>
               </div>
+
+              {/* Fraud Explainability Panel */}
+              <FraudExplainer
+                fraudScore={c.fraudScore}
+                fraudLabel={c.fraudLabel}
+                fraudColor={c.fraudColor}
+                status={c.status}
+                triggerType={c.triggerType}
+                flags={c.fraudScore >= 70 ? ['GPS_TOO_FAR', 'ML_ANOMALY'] : c.fraudScore >= 45 ? ['HIGH_FREQUENCY'] : []}
+                mlScore={c.fraudScore / 100}
+              />
 
               {/* Download Receipt Button */}
               {(c.status === "paid" || c.status === "review") && (
