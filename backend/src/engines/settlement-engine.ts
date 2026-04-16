@@ -295,7 +295,7 @@ export function processSettlement(input: SettlementInput): SettlementResult {
     transactionRef,
     estimatedTime,
     timeline,
-    rollbackAvailable: finalStatus === 'processing' || finalStatus === 'completed',
+    rollbackAvailable: finalStatus === 'processing',
     failureReason,
     attemptedChannels,
   };

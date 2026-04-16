@@ -629,8 +629,8 @@ export function calculateWeeklyPremium(
     basePremium: Math.round(clampedDynamicPremium * 0.8),
     riskLevel,
     breakdown: {
-      base: Math.round(discountedPremium * 0.8),
-      aiRiskAdjustment: Math.round(discountedPremium * 0.2),
+      base: Math.round(clampedDynamicPremium * 0.8),
+      aiRiskAdjustment: Math.round(clampedDynamicPremium * 0.2),
       anomalyPenalty: 0,
     },
     factors: {

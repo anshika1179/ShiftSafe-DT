@@ -413,6 +413,12 @@ export async function POST(req: NextRequest) {
       daysActiveInLast30: safeActiveDays, // use total as proxy
       avgWeeklyIncome: safeIncome,
       vehicleType: vehicleType || "bike",
+      isMultiApping: false,
+      dpdpConsents: {
+        gpsLocation: true,
+        bankUpi: true,
+        platformActivity: true,
+      },
     });
 
     // save the worker record (supports both current and legacy DB schemas)
