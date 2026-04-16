@@ -757,7 +757,7 @@ export default function AdminDashboard() {
           </form>
           <div className="text-center mt-4">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200 text-[10px] text-slate-500 font-semibold">
-              💡 Use ADMIN_EMAIL + ADMIN_DEV_PASSWORD from your env
+              💡 Demo: admin@shiftsafe.in / shiftsafe2026
             </div>
           </div>
         </div>

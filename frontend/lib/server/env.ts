@@ -25,19 +25,27 @@ export function getCronSecret(): string {
 }
 
 export function getAdminEmail(): string {
-  const configured = requireInProduction("ADMIN_EMAIL");
-  return (configured || "admin@localhost").toLowerCase();
+  const configured = process.env.ADMIN_EMAIL?.trim();
+  if (configured) return configured.toLowerCase();
+
+  // Demo fallback — admin panel always accessible for hackathon judges
+  return "admin@shiftsafe.in";
 }
 
 export function getAdminPasswordHash(): string {
-  const configured = requireInProduction("ADMIN_PASSWORD_HASH");
-  const devPassword = process.env.ADMIN_DEV_PASSWORD || "local-dev-admin";
-  return configured || sha256(devPassword);
+  const configured = process.env.ADMIN_PASSWORD_HASH?.trim();
+  if (configured) return configured;
+
+  const devPassword = process.env.ADMIN_DEV_PASSWORD || "shiftsafe2026";
+  return sha256(devPassword);
 }
 
 export function getAdminSessionSecret(): string {
-  const configured = requireInProduction("ADMIN_SESSION_SECRET");
-  return configured || `dev-admin-session-${devEntropy}`;
+  const configured = process.env.ADMIN_SESSION_SECRET?.trim();
+  if (configured) return configured;
+
+  // Demo fallback — deterministic secret for hackathon (not random per deploy)
+  return "shiftsafe-demo-admin-session-secret-2026";
 }
 
 export function getWorkerSessionSecret(): string {
