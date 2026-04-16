@@ -7,6 +7,7 @@ import {
   triggerToast,
 } from "@/frontend/components/ui/Notifications";
 import { getTriggerEmoji, getTriggerName } from "@/backend/utils/store";
+import { downloadReceipt, downloadClaimsCSV } from "@/lib/receipt-generator";
 
 const SIMULATOR_BUTTONS = [
   {
@@ -83,10 +84,11 @@ function getStatusBadgeClass(
 
 export default function ClaimsPage() {
   const router = useRouter();
-  const { worker, claims, addClaim, isLoggedIn, isBootstrapping } =
+  const { worker, policy, claims, addClaim, isLoggedIn, isBootstrapping } =
     useAppState();
   const [processing, setProcessing] = useState<string | null>(null);
   const [fraudRunning, setFraudRunning] = useState(false);
+  const [downloadingReceipt, setDownloadingReceipt] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isBootstrapping && !isLoggedIn) router.replace("/");
@@ -238,6 +240,52 @@ export default function ClaimsPage() {
     }
   };
 
+  const handleDownloadReceipt = (claimId: string) => {
+    const claim = claims.find((c) => c.id === claimId);
+    if (!claim) return;
+
+    setDownloadingReceipt(claimId);
+    try {
+      downloadReceipt({ claim, worker, policy });
+      triggerToast("Receipt downloaded ✓", "success");
+    } catch {
+      triggerToast("Unable to generate receipt.", "error");
+    }
+    setTimeout(() => setDownloadingReceipt(null), 1200);
+  };
+
+  const handleExportCSV = () => {
+    if (claims.length === 0) {
+      triggerToast("No claims to export.", "error");
+      return;
+    }
+    try {
+      downloadClaimsCSV(claims, worker?.name);
+      triggerToast("Claims exported as CSV ✓", "success");
+    } catch {
+      triggerToast("Unable to export claims.", "error");
+    }
+  };
+
+  const handleServerExport = async () => {
+    if (!worker?.id) {
+      triggerToast("Worker profile missing.", "error");
+      return;
+    }
+    try {
+      const url = `/api/claims/export?workerId=${encodeURIComponent(worker.id)}`;
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ShiftSafe-Claims-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      triggerToast("Server export started ✓", "success");
+    } catch {
+      triggerToast("Unable to start server export.", "error");
+    }
+  };
+
   return (
     <div className="space-y-5 max-w-120 mx-auto fade-in pb-8">
       <div className="flex items-center justify-between">
@@ -282,6 +330,37 @@ export default function ClaimsPage() {
           </div>
         </div>
       </div>
+
+      {/* Export Controls */}
+      {claims.length > 0 && (
+        <div className="glass-card p-4" style={{ borderColor: 'rgba(59,130,246,0.2)', background: 'linear-gradient(135deg, rgba(59,130,246,0.03), rgba(16,185,129,0.03))' }}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">
+              📊 Export & Receipts
+            </div>
+            <span className="text-[9px] text-gray-400 font-mono">
+              {claims.length} claim{claims.length !== 1 ? 's' : ''} available
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleExportCSV}
+              className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all hover:-translate-y-0.5 active:scale-[0.98] shadow-sm"
+            >
+              <span>📄</span> Export CSV
+            </button>
+            <button
+              onClick={handleServerExport}
+              className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all hover:-translate-y-0.5 active:scale-[0.98] shadow-sm"
+            >
+              <span>🗄️</span> Export from DB
+            </button>
+          </div>
+          <div className="text-[9px] text-gray-400 mt-2 text-center">
+            CSV = client-side (current session) · DB = server-side (all historical claims)
+          </div>
+        </div>
+      )}
 
       {/* demo simulator */}
       <div
@@ -411,6 +490,34 @@ export default function ClaimsPage() {
                   )}
                 </div>
               </div>
+
+              {/* Download Receipt Button */}
+              {(c.status === "paid" || c.status === "review") && (
+                <button
+                  onClick={() => handleDownloadReceipt(c.id)}
+                  disabled={downloadingReceipt === c.id}
+                  className="w-full mt-3 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-all active:scale-[0.98] border shadow-sm hover:-translate-y-0.5"
+                  style={{
+                    background: c.status === 'paid'
+                      ? 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(52,211,153,0.04))'
+                      : 'linear-gradient(135deg, rgba(249,115,22,0.08), rgba(245,158,11,0.04))',
+                    borderColor: c.status === 'paid' ? 'rgba(16,185,129,0.25)' : 'rgba(249,115,22,0.25)',
+                    color: c.status === 'paid' ? '#059669' : '#d97706',
+                  }}
+                >
+                  {downloadingReceipt === c.id ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <span>📄</span>
+                      Download Receipt
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           ))
           )}
