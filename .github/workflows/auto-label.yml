@@ -24,9 +24,9 @@ jobs:
               repo: context.repo.repo,
               pull_number: context.issue.number,
             });
-            
+
             const labels = new Set();
-            
+
             for (const file of files) {
               const path = file.filename;
               
@@ -39,7 +39,7 @@ jobs:
               if (path.endsWith('.md')) labels.add('documentation');
               if (path.startsWith('src/app/') && path.endsWith('page.tsx')) labels.add('pages');
             }
-            
+
             if (labels.size > 0) {
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,

@@ -52,6 +52,36 @@ interface ClaimDetailsRow {
   ifsc_code: string | null;
 }
 
+function mapSettlementToClaimState(status: string): {
+  claimStatus: "paid" | "review";
+  settlementStatus: string;
+  processedAtSql: "datetime('now')" | "NULL";
+} {
+  const normalized = String(status || "").toLowerCase();
+
+  if (normalized === "completed") {
+    return {
+      claimStatus: "paid",
+      settlementStatus: "completed",
+      processedAtSql: "datetime('now')",
+    };
+  }
+
+  if (normalized === "processing") {
+    return {
+      claimStatus: "review",
+      settlementStatus: "processing",
+      processedAtSql: "NULL",
+    };
+  }
+
+  return {
+    claimStatus: "review",
+    settlementStatus: normalized || "failed",
+    processedAtSql: "NULL",
+  };
+}
+
 interface CountRow {
   status: string;
   count: number;
@@ -369,6 +399,16 @@ export async function PATCH(req: NextRequest) {
       maxPayoutCap,
     });
 
+    const claimState = mapSettlementToClaimState(settlement.status);
+    const claimPayoutChannel =
+      claimState.claimStatus === "paid" ? settlement.channel : "manual_review";
+    const claimPayoutMethod =
+      claimState.claimStatus === "paid" ? settlement.channel : "manual_review";
+    const statusMessage =
+      claimState.claimStatus === "paid"
+        ? `Claim approved and payout settled via ${settlement.channel}`
+        : `Claim approved for payout review: ${settlement.failureReason || "settlement requires manual follow-up"}`;
+
     const evidenceData = withAdminReviewMetadata(
       claim.evidence_data,
       "approve",
@@ -379,27 +419,28 @@ export async function PATCH(req: NextRequest) {
       .prepare(
         `UPDATE claims
          SET amount = ?,
-             status = 'paid',
+             status = ?,
              payout_method = ?,
              payout_channel = ?,
              settlement_status = ?,
              evidence_data = ?,
-             processed_at = datetime('now')
+             processed_at = ${claimState.processedAtSql}
          WHERE id = ?`,
       )
       .run(
         settlement.cappedAmount,
-        settlement.channel,
-        settlement.channel,
-        settlement.status,
+        claimState.claimStatus,
+        claimPayoutMethod,
+        claimPayoutChannel,
+        claimState.settlementStatus,
         evidenceData,
         claimId,
       );
 
     await db
       .prepare(
-        `INSERT INTO settlements (id, claim_id, worker_id, amount, channel, fallback_channel, upi_id, bank_account, status, completed_at, transaction_ref)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)`,
+        `INSERT INTO settlements (id, claim_id, worker_id, amount, channel, fallback_channel, upi_id, bank_account, status, completed_at, failure_reason, transaction_ref)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${settlement.status === "completed" ? "datetime('now')" : "NULL"}, ?, ?)`,
       )
       .run(
         settlement.settlementId,
@@ -411,14 +452,15 @@ export async function PATCH(req: NextRequest) {
         settlementUpiId || null,
         settlementBankAccount || null,
         settlement.status,
+        settlement.failureReason,
         settlement.transactionRef,
       );
 
     return NextResponse.json({
       success: true,
       claimId,
-      status: "paid",
-      message: `Claim approved and payout settled via ${settlement.channel}`,
+      status: claimState.claimStatus,
+      message: statusMessage,
       settlement: {
         id: settlement.settlementId,
         channel: settlement.channel,
@@ -426,6 +468,9 @@ export async function PATCH(req: NextRequest) {
         amount: settlement.cappedAmount,
         estimatedTime: settlement.estimatedTime,
         transactionRef: settlement.transactionRef,
+        status: settlement.status,
+        failureReason: settlement.failureReason,
+        attemptedChannels: settlement.attemptedChannels,
       },
     });
   } catch {

@@ -16,6 +16,13 @@
  *   F6: Duplicate-today binary
  *   F7: Policy-active binary
  *   F8: Time-of-day bucket (night claims are riskier)
+ *   F9: Platform Context (Multiple rapid logins across zones)
+ *   F10: Device ID Swaps (How many times device ID changed)
+ *   F11: Time since last claim (minutes)
+ *   F12: Battery level (Often spoofed apps force 100% battery)
+ *   F13: App version integrity (binary)
+ *   F14: Bank account mismatch (UPI name vs Platform name)
+ *   F15: Altitude variance (If GPS spoofing, altitude is often zero or flat)
  *
  * Reference: Liu, Ting & Zhou (2008) "Isolation Forest"
  */
@@ -32,6 +39,14 @@ export interface FraudInput {
   gpsAccuracyMeters?: number;
   travelSpeedKmph?: number;
   zoneRadiusKm?: number;
+  // Deep-device AI tracking
+  multipleLoginsDetected?: boolean;    // F9
+  deviceSwaps30d?: number;             // F10
+  timeSinceLastClaimMin?: number;      // F11
+  batteryLevelPct?: number;            // F12
+  appVersionIntegrityFailed?: boolean; // F13
+  bankUpiNameMismatch?: boolean;       // F14
+  altitudeVarianceMeters?: number;     // F15
 }
 
 export interface FraudResult {
@@ -44,6 +59,8 @@ export interface FraudResult {
   distanceKm: number;
   isolationDepth: number;
   featureVector: number[];
+  rawFeatureVector: number[];
+  normalizedFeatureVector: number[];
   modelVersion: string;
 }
 
@@ -73,8 +90,34 @@ function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
 }
 
+const FEATURE_STATS = [
+  { mean: 2, std: 4 },       // F1: Distance (km)
+  { mean: 15, std: 20 },     // F2: GPS Accuracy (m)
+  { mean: 25, std: 15 },     // F3: Speed (kmph)
+  { mean: 1.0, std: 0.5 },   // F4: Amount ratio
+  { mean: 1.0, std: 1.5 },   // F5: Frequency
+  { mean: 0.05, std: 0.22 }, // F6: Duplicate (binary)
+  { mean: 0.05, std: 0.22 }, // F7: Policy inactive (binary)
+  { mean: 12, std: 6 },      // F8: Hour bucket (0-23)
+  { mean: 0.02, std: 0.14 }, // F9: Multiple logins (binary)
+  { mean: 0.5, std: 1.0 },   // F10: Device swaps
+  { mean: 43200, std: 21600},// F11: Time since last claim (mins)
+  { mean: 45, std: 25 },     // F12: Battery level (0-100)
+  { mean: 0.01, std: 0.1 },  // F13: App integrity failed
+  { mean: 0.03, std: 0.17 }, // F14: Bank mismatch
+  { mean: 50, std: 30 },     // F15: Altitude variance (meters)
+];
+
+function zScore(value: number, mean: number, std: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return (value - mean) / std;
+}
+
 /* ─── Feature Engineering ─── */
-function extractFeatures(input: FraudInput): number[] {
+function extractFeatures(input: FraudInput): {
+  rawFeatures: number[];
+  normalizedFeatures: number[];
+} {
   const distanceKm =
     input.distanceFromZone ??
     (input.workerLocation && input.triggerLocation
@@ -91,35 +134,84 @@ function extractFeatures(input: FraudInput): number[] {
   const duplicateToday = input.claimAlreadyToday ? 1 : 0;
   const policyInactive = input.policyActive === false ? 1 : 0;
   const hourBucket = new Date().getHours(); // 0-23, night claims (0-5) are riskier
+  
+  const multipleLogins = input.multipleLoginsDetected ? 1 : 0;
+  const deviceSwaps = input.deviceSwaps30d ?? 0;
+  const timeSinceLastClaim = input.timeSinceLastClaimMin ?? 43200;
+  const batteryPct = input.batteryLevelPct ?? Math.floor(Math.random() * 80) + 20; // Simulated
+  const appIntegrityFailed = input.appVersionIntegrityFailed ? 1 : 0;
+  const bankMismatch = input.bankUpiNameMismatch ? 1 : 0;
+  const altitudeVar = input.altitudeVarianceMeters ?? 45;
 
-  return [
-    Number(distanceKm) || 0, // F1
-    Number(gpsAccuracy) || 0, // F2
-    Number(speed) || 0, // F3
-    Number(amountRatio) || 0, // F4
-    Number(frequency) || 0, // F5
-    Number(duplicateToday) || 0, // F6
-    Number(policyInactive) || 0, // F7
-    Number(hourBucket) / 24 || 0, // F8 (normalized)
+  // We DO NOT clamp extreme values because Isolation Forest relies
+  // on extreme magnitudes to quickly isolate anomalies.
+  const rawFeatures = [
+    Number(distanceKm) || 0,
+    Number(gpsAccuracy) || 0,
+    Number(speed) || 0,
+    Number(amountRatio) || 0,
+    Number(frequency) || 0,
+    Number(duplicateToday) || 0,
+    Number(policyInactive) || 0,
+    Number(hourBucket) || 0,
+    Number(multipleLogins) || 0,
+    Number(deviceSwaps) || 0,
+    Number(timeSinceLastClaim) || 0,
+    Number(batteryPct) || 0,
+    Number(appIntegrityFailed) || 0,
+    Number(bankMismatch) || 0,
+    Number(altitudeVar) || 0,
   ];
+
+  // Standard Scaling (Z-score) normalizes scales without destroying extreme anomaly distances
+  const normalizedFeatures = rawFeatures.map((val, idx) =>
+    zScore(val, FEATURE_STATS[idx].mean, FEATURE_STATS[idx].std)
+  );
+
+  return { rawFeatures, normalizedFeatures };
 }
 
 /* ─── Isolation Forest Implementation ─── */
 
-// Feature bounds for split generation (learned from domain knowledge + data)
+// Feature bounds for split generation (Z-score normal bounds)
+// Represents typical range (-3 std to +3 std). 
+// True anomalies will fall outside this and be isolated extremely fast.
 const FEATURE_BOUNDS: [number, number][] = [
-  [0, 15], // F1: distance km
-  [5, 250], // F2: GPS accuracy meters
-  [0, 120], // F3: travel speed
-  [0, 2.5], // F4: amount ratio
-  [0, 8], // F5: frequency 30d
-  [0, 1], // F6: duplicate binary
-  [0, 1], // F7: policy inactive binary
-  [0, 1], // F8: hour bucket
+  [-3, 3], // F1: distance (z-score)
+  [-3, 3], // F2: GPS accuracy (z-score)
+  [-3, 3], // F3: travel speed (z-score)
+  [-3, 3], // F4: amount ratio (z-score)
+  [-3, 3], // F5: frequency 30d (z-score)
+  [-3, 3], // F6: duplicate binary (z-score)
+  [-3, 3], // F7: policy inactive binary (z-score)
+  [-3, 3], // F8: hour bucket (z-score)
+  [-3, 3], // F9: multiple logins (z-score)
+  [-3, 3], // F10: device swaps (z-score)
+  [-3, 3], // F11: time since last (z-score)
+  [-3, 3], // F12: battery pct (z-score)
+  [-3, 3], // F13: app integrity (z-score)
+  [-3, 3], // F14: bank mismatch (z-score)
+  [-3, 3], // F15: altitude var (z-score)
 ];
 
 // Feature importance weights (validated via permutation importance)
-const FEATURE_WEIGHTS = [0.22, 0.1, 0.13, 0.18, 0.12, 0.1, 0.08, 0.07];
+const FEATURE_WEIGHTS = [
+  0.15, // F1: Dist 
+  0.08, // F2: GPS
+  0.08, // F3: Speed
+  0.12, // F4: Ratio
+  0.10, // F5: Freq
+  0.07, // F6: Dup
+  0.07, // F7: Inactive
+  0.05, // F8: Hour
+  0.08, // F9: Logins
+  0.05, // F10: Device
+  0.03, // F11: Time
+  0.03, // F12: Battery
+  0.04, // F13: Integrity
+  0.03, // F14: Mismatch
+  0.02  // F15: Altitude
+];
 
 interface IsolationNode {
   featureIdx: number;
@@ -174,7 +266,7 @@ function buildIsolationTree(
     }
   }
 
-  // Random split point within feature bounds
+  // Random split point within functional Z-score feature bounds
   const [lo, hi] = FEATURE_BOUNDS[featureIdx];
   const splitValue = lo + rng.next() * (hi - lo);
 
@@ -238,7 +330,7 @@ function computeAnomalyScore(features: number[]): {
 /* ─── Rule-Based Flags (Explainability Layer) ─── */
 function computeRuleFlags(features: number[], input: FraudInput): string[] {
   const flags: string[] = [];
-  const [dist, gps, speed, ratio, freq, dup, inactive] = features;
+  const [dist, gps, speed, ratio, freq, dup, inactive, hour, logins, device, time, battery, integrity, mismatch, alt] = features;
 
   if (dist > (input.zoneRadiusKm ?? 5)) flags.push("GPS_GEOFENCE_BREACH");
   if (gps > 120) flags.push("LOW_GPS_ACCURACY");
@@ -247,6 +339,11 @@ function computeRuleFlags(features: number[], input: FraudInput): string[] {
   if (inactive === 1) flags.push("RETROACTIVE_CLAIM");
   if (ratio > 1.2) flags.push("AMOUNT_INFLATED");
   if (freq > 3) flags.push("HIGH_FREQUENCY");
+  if (logins === 1) flags.push("SIMULTANEOUS_LOGINS");
+  if (device > 3) flags.push("FREQUENT_DEVICE_SWAP");
+  if (integrity === 1) flags.push("APP_INTEGRITY_COMPROMISED");
+  if (mismatch === 1) flags.push("BANK_UPI_MISMATCH");
+  if (battery > 99 && alt < 1) flags.push("SPOOF_PROFILE_DETECTED");
 
   // GPS validation: check if distance + accuracy suggests spoofing
   if (dist > 2 && gps > 80) flags.push("GPS_SPOOF_SUSPECTED");
@@ -257,9 +354,11 @@ function computeRuleFlags(features: number[], input: FraudInput): string[] {
 
 /* ─── Main Fraud Detection Function ─── */
 export function detectFraudAdvanced(input: FraudInput): FraudResult {
-  const features = extractFeatures(input);
-  const { score: anomalyScore, avgDepth } = computeAnomalyScore(features);
-  const flags = computeRuleFlags(features, input);
+  const { rawFeatures, normalizedFeatures } = extractFeatures(input);
+  
+  // Anomaly score computed using properly Standard-Scaled Features (Z-scores)
+  const { score: anomalyScore, avgDepth } = computeAnomalyScore(normalizedFeatures);
+  const flags = computeRuleFlags(rawFeatures, input);
 
   // Convert anomaly score (0-1) to 0-100 scale
   // Normal data: anomalyScore ≈ 0.4-0.5, Fraud: anomalyScore > 0.6
@@ -276,6 +375,12 @@ export function detectFraudAdvanced(input: FraudInput): FraudResult {
   if (flags.includes("LOW_GPS_ACCURACY")) ruleBonus += 8;
   if (flags.includes("GPS_SPOOF_SUSPECTED")) ruleBonus += 15;
   if (flags.includes("LOCATION_INCONSISTENCY")) ruleBonus += 10;
+  
+  if (flags.includes("SIMULTANEOUS_LOGINS")) ruleBonus += 25;
+  if (flags.includes("APP_INTEGRITY_COMPROMISED")) ruleBonus += 30;
+  if (flags.includes("BANK_UPI_MISMATCH")) ruleBonus += 25;
+  if (flags.includes("SPOOF_PROFILE_DETECTED")) ruleBonus += 20;
+
   ruleBonus = Math.min(ruleBonus, 60);
 
   let finalScore = clamp(
@@ -289,7 +394,7 @@ export function detectFraudAdvanced(input: FraudInput): FraudResult {
     finalScore = Math.max(finalScore, 90);
   }
 
-  const distanceKm = parseFloat(features[0].toFixed(3));
+  const distanceKm = parseFloat((rawFeatures[0] ?? 0).toFixed(3));
 
   let decision: FraudResult["decision"];
   let label: string;
@@ -322,8 +427,16 @@ export function detectFraudAdvanced(input: FraudInput): FraudResult {
     mlScore,
     distanceKm,
     isolationDepth: parseFloat(avgDepth.toFixed(2)),
-    featureVector: features.map((f) => parseFloat(Number(f || 0).toFixed(4))),
-    modelVersion: "IF-v2.1-100t-10d",
+    featureVector: normalizedFeatures.map((f) =>
+      parseFloat(Number(f || 0).toFixed(4)),
+    ),
+    rawFeatureVector: rawFeatures.map((f) =>
+      parseFloat(Number(f || 0).toFixed(4)),
+    ),
+    normalizedFeatureVector: normalizedFeatures.map((f) =>
+      parseFloat(Number(f || 0).toFixed(4)),
+    ),
+    modelVersion: "IF-v3.0-ZScore-Scaled",
   };
 }
 

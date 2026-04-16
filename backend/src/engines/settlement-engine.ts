@@ -37,10 +37,12 @@ export interface SettlementResult {
   amount: number;
   cappedAmount: number;     // after 50% cap applied
   status: SettlementStatus;
-  transactionRef: string;
+  transactionRef: string | null;
   estimatedTime: string;
   timeline: SettlementStep[];
   rollbackAvailable: boolean;
+  failureReason: string | null;
+  attemptedChannels: PayoutChannel[];
 }
 
 export interface SettlementStep {
@@ -51,9 +53,92 @@ export interface SettlementStep {
   details: string;
 }
 
+interface TransferAttempt {
+  success: boolean;
+  channel: PayoutChannel;
+  transactionRef: string | null;
+  failureReason: string | null;
+}
+
 function generateTransactionRef(channel: PayoutChannel): string {
   const prefix = channel === 'UPI' ? 'UPI-TXN' : channel === 'IMPS' ? 'IMPS-TXN' : 'RZP-TXN';
   return `${prefix}-${Math.floor(1000000 + Math.random() * 9000000)}`;
+}
+
+function estimateSettlementTime(channel: PayoutChannel): string {
+  if (channel === 'IMPS') return '< 5 minutes';
+  if (channel === 'RAZORPAY_SANDBOX') return '< 1 minute (sandbox)';
+  return '< 2 minutes';
+}
+
+function isValidUpiId(upiId?: string): boolean {
+  if (!upiId) return false;
+  const trimmed = String(upiId).trim().toLowerCase();
+  return /^[a-z0-9._-]{2,}@[a-z]{2,}$/i.test(trimmed);
+}
+
+function isValidBankAccount(bankAccount?: string): boolean {
+  if (!bankAccount) return false;
+  const compact = String(bankAccount).replace(/\s+/g, '');
+  return /^\d{9,18}$/.test(compact);
+}
+
+function attemptTransfer(
+  channel: PayoutChannel,
+  amount: number,
+  input: SettlementInput,
+): TransferAttempt {
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return {
+      success: false,
+      channel,
+      transactionRef: null,
+      failureReason: 'Invalid payout amount',
+    };
+  }
+
+  if (channel === 'UPI') {
+    if (!isValidUpiId(input.upiId)) {
+      return {
+        success: false,
+        channel,
+        transactionRef: null,
+        failureReason: 'UPI transfer failed: invalid UPI ID',
+      };
+    }
+
+    return {
+      success: true,
+      channel,
+      transactionRef: generateTransactionRef(channel),
+      failureReason: null,
+    };
+  }
+
+  if (channel === 'IMPS') {
+    if (!isValidBankAccount(input.bankAccount)) {
+      return {
+        success: false,
+        channel,
+        transactionRef: null,
+        failureReason: 'IMPS transfer failed: invalid bank account',
+      };
+    }
+
+    return {
+      success: true,
+      channel,
+      transactionRef: generateTransactionRef(channel),
+      failureReason: null,
+    };
+  }
+
+  return {
+    success: true,
+    channel,
+    transactionRef: generateTransactionRef(channel),
+    failureReason: null,
+  };
 }
 
 /**
@@ -70,10 +155,6 @@ function selectChannel(upiId?: string, bankAccount?: string): { primary: PayoutC
   return { primary: 'RAZORPAY_SANDBOX', fallback: null };
 }
 
-/**
- * Process a settlement — the main entry point
- * This is called AFTER fraud check passes
- */
 export function processSettlement(input: SettlementInput): SettlementResult {
   const now = new Date().toISOString();
 
@@ -83,11 +164,18 @@ export function processSettlement(input: SettlementInput): SettlementResult {
   // Select channel
   const { primary, fallback } = selectChannel(input.upiId, input.bankAccount);
 
-  // Generate refs
-  const transactionRef = generateTransactionRef(primary);
   const settlementId = `SET-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const attemptedChannels: PayoutChannel[] = [primary];
+  let finalChannel: PayoutChannel = primary;
+  
+  // Real settlements don't complete instantly in the real world.
+  // We mark it as 'processing' so the status reflects an ongoing transfer.
+  let finalStatus: SettlementStatus = 'processing';
+  let transactionRef: string | null = null;
+  let failureReason: string | null = null;
+  let estimatedTime = estimateSettlementTime(primary);
 
-  // Build the 5-step settlement timeline
+  // Early steps are definitively completed since we got to this point
   const timeline: SettlementStep[] = [
     {
       step: 1,
@@ -113,35 +201,103 @@ export function processSettlement(input: SettlementInput): SettlementResult {
     {
       step: 4,
       name: 'Transfer Initiated',
-      status: 'completed',
+      status: 'in_progress',
       timestamp: now,
-      details: `${primary} transfer of ₹${cappedAmount} to ${input.upiId || input.bankAccount || 'sandbox'}. Ref: ${transactionRef}`,
+      details: `${primary} transfer attempt for ₹${cappedAmount} started`,
     },
     {
       step: 5,
       name: 'Record Updated',
-      status: 'completed',
+      status: 'pending',
       timestamp: now,
-      details: `PolicyCenter logs payout, BillingCenter reconciles. SMS confirmation sent.`,
+      details: `Awaiting transfer outcome before ledger reconciliation`,
     },
   ];
 
-  // Estimate settlement time based on channel
-  let estimatedTime = '< 2 minutes';
-  if (primary === 'IMPS') estimatedTime = '< 5 minutes';
-  if (primary === 'RAZORPAY_SANDBOX') estimatedTime = '< 1 minute (sandbox)';
+  const primaryAttempt = attemptTransfer(primary, cappedAmount, input);
+  if (primaryAttempt.success) {
+    // Leave status as 'processing' to reflect real-world pending transfers
+    finalStatus = 'processing';
+    transactionRef = primaryAttempt.transactionRef;
+    
+    timeline[3] = {
+      ...timeline[3],
+      status: 'completed',
+      details: `${primary} transfer of ₹${cappedAmount} initiated successfully. Ref: ${transactionRef}`,
+    };
+    timeline[4] = {
+      ...timeline[4],
+      status: 'pending',
+      details: 'PolicyCenter logging payout. Awaiting final bank confirmation...',
+    };
+  } else if (fallback) {
+    attemptedChannels.push(fallback);
+    timeline[3] = {
+      ...timeline[3],
+      status: 'failed',
+      details: `${primaryAttempt.failureReason}. Retrying via ${fallback}.`,
+    };
+
+    const fallbackAttempt = attemptTransfer(fallback, cappedAmount, input);
+    if (fallbackAttempt.success) {
+      finalStatus = 'processing';
+      finalChannel = fallback;
+      transactionRef = fallbackAttempt.transactionRef;
+      failureReason = primaryAttempt.failureReason;
+      estimatedTime = `${estimateSettlementTime(primary)} + fallback ${estimateSettlementTime(fallback)}`;
+
+      timeline[3] = {
+        ...timeline[3],
+        status: 'completed',
+        details: `${fallback} transfer of ₹${cappedAmount} initiated after ${primary} failure. Ref: ${transactionRef}`,
+      };
+      timeline[4] = {
+        ...timeline[4],
+        status: 'pending',
+        details: `${primary} failed; processing via fallback ${fallback}. Ref: ${transactionRef}.`,
+      };
+    } else {
+      finalStatus = 'failed'; // We can safely mark as failed if absolutely rejected
+      failureReason = `${primaryAttempt.failureReason}; ${fallbackAttempt.failureReason}`;
+      estimatedTime = 'Manual review required';
+      timeline[4] = {
+        ...timeline[4],
+        status: 'failed',
+        details: `All transfer attempts failed. ${failureReason}. Claim moved to manual review.`,
+      };
+    }
+  } else {
+    finalStatus = 'failed';
+    failureReason = primaryAttempt.failureReason;
+    estimatedTime = 'Manual review required';
+    timeline[3] = {
+      ...timeline[3],
+      status: 'failed',
+      details: `${primaryAttempt.failureReason}. No fallback channel available.`,
+    };
+    timeline[4] = {
+      ...timeline[4],
+      status: 'failed',
+      details: 'Settlement not recorded as paid. Claim returned for manual review.',
+    };
+  }
+
+  // NOTE: We intentionally DO NOT mark Steps 1, 2, 3 as failed if the overall settlement fails.
+  // The trigger and eligibility succeeded, so their step statuses must correctly reflect that reality.
 
   return {
     settlementId,
-    channel: primary,
+    channel: finalChannel,
     fallbackChannel: fallback,
     amount: input.amount,
     cappedAmount,
-    status: 'completed',
+    status: finalStatus,
     transactionRef,
     estimatedTime,
     timeline,
-    rollbackAvailable: true,
+    rollbackAvailable: finalStatus === 'processing' || finalStatus === 'completed',
+    failureReason,
+    attemptedChannels,
   };
 }
 
@@ -153,13 +309,12 @@ export function simulateFailedSettlement(input: SettlementInput): SettlementResu
   const now = new Date().toISOString();
   const cappedAmount = Math.min(input.amount, input.maxPayoutCap);
   const { primary, fallback } = selectChannel(input.upiId, input.bankAccount);
-  const transactionRef = generateTransactionRef(primary);
   const settlementId = `SET-FAIL-${Date.now()}`;
 
   const timeline: SettlementStep[] = [
     {
       step: 1, name: 'Trigger Confirmed', status: 'completed', timestamp: now,
-      details: 'Event threshold confirmed',
+      details: 'Event threshold confirmed (system processing)',
     },
     {
       step: 2, name: 'Worker Eligibility Check', status: 'completed', timestamp: now,
@@ -167,17 +322,17 @@ export function simulateFailedSettlement(input: SettlementInput): SettlementResu
     },
     {
       step: 3, name: 'Payout Calculated', status: 'completed', timestamp: now,
-      details: `₹${cappedAmount} calculated`,
+      details: `₹${cappedAmount} calculated (max cap considered)`,
     },
     {
       step: 4, name: 'Transfer Initiated', status: 'failed', timestamp: now,
-      details: `${primary} transfer failed — ${primary === 'UPI' ? 'UPI ID invalid or timeout' : 'Bank server timeout'}`,
+      details: `${primary} transfer failed — ${primary === 'UPI' ? 'UPI ID invalid or bank timeout' : 'Bank server timeout'}`,
     },
     {
       step: 5, name: 'Rollback & Fallback', status: 'in_progress', timestamp: now,
       details: fallback
-        ? `Rolling back. Retrying via ${fallback}...`
-        : 'Rolling back. Manual review required — no fallback channel available.',
+        ? `Transfer dropped. Retrying via ${fallback}...`
+        : 'Transfer dropped. Manual review required — no fallback channel available.',
     },
   ];
 
@@ -188,10 +343,14 @@ export function simulateFailedSettlement(input: SettlementInput): SettlementResu
     amount: input.amount,
     cappedAmount,
     status: 'rolled_back',
-    transactionRef,
+    transactionRef: null,
     estimatedTime: fallback ? '< 10 minutes (fallback)' : 'Manual review required',
     timeline,
     rollbackAvailable: false,
+    failureReason: fallback
+      ? `${primary} failed; fallback ${fallback} pending/manual review`
+      : `${primary} failed with no fallback channel`,
+    attemptedChannels: fallback ? [primary, fallback] : [primary],
   };
 }
 

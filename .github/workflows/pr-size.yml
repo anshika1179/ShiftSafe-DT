@@ -23,27 +23,27 @@ jobs:
               repo: context.repo.repo,
               pull_number: context.issue.number,
             });
-            
+
             const additions = pr.additions;
             const deletions = pr.deletions;
             const total = additions + deletions;
-            
+
             let label = '';
             let emoji = '';
-            
+
             if (total < 50) { label = 'size/XS'; emoji = '🟢'; }
             else if (total < 200) { label = 'size/S'; emoji = '🟡'; }
             else if (total < 500) { label = 'size/M'; emoji = '🟠'; }
             else if (total < 1000) { label = 'size/L'; emoji = '🔴'; }
             else { label = 'size/XL'; emoji = '🔥'; }
-            
+
             // Remove old size labels
             const { data: labels } = await github.rest.issues.listLabelsOnIssue({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-            
+
             for (const l of labels) {
               if (l.name.startsWith('size/')) {
                 await github.rest.issues.removeLabel({
@@ -54,14 +54,14 @@ jobs:
                 });
               }
             }
-            
+
             await github.rest.issues.addLabels({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
               labels: [label],
             });
-            
+
             if (total > 500) {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,

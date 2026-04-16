@@ -114,7 +114,12 @@ async function insertWorkerRecord(
         activityTier,
       );
   } catch (error) {
-    const payoutColumns = ["payout_method", "upi_id", "bank_account", "ifsc_code"];
+    const payoutColumns = [
+      "payout_method",
+      "upi_id",
+      "bank_account",
+      "ifsc_code",
+    ];
     if (!isMissingWorkerColumnError(error, payoutColumns)) {
       throw error;
     }
