@@ -12,10 +12,7 @@ _An AI-enabled parametric micro-insurance platform empowering platform-based del
 
 > 🛑 **ATTENTION JUDGES:** For a comprehensive technical overview of Phase 3 features, our AI/ML framework, and the full system architecture from all phases, **please scroll down and explore the complete README below.** ⬇️
 
-> 🏆 **Live Demo:** [https://shift-safe-dt-frontend-livid.vercel.app](https://shift-safe-dt-frontend-livid.vercel.app)  
-> 📊 **Pitch Deck:** [View Presentation](https://docs.google.com/presentation/d/1eJckGP3-lfbzZO8o3h-LbPPiqFjLASzguZZHBeRzLW0/edit?usp=sharing)  
-> 🎥 **Video Demo:** [Watch on Google Drive](https://drive.google.com/file/d/1ix3dya3Z1Aokun7tx29lQGWj5WolgCzf/view?usp=drive_link)
-> 🎬 **Pitch Video:** [Watch on YouTube](https://youtu.be/EkIxbAylMlI?si=k3dAWrvtoWwRxlT8)
+> 🏆 **Live Demo:** [https://shift-safe-dt-frontend-livid.vercel.app](https://shift-safe-dt-frontend-livid.vercel.app)
 
 ---
 
