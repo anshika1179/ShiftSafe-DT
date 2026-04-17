@@ -238,11 +238,22 @@ function statusColor(s: string): string {
   const n = s.toLowerCase();
   if (n === "review" || n === "open" || n === "pending")
     return "bg-orange-50 text-orange-700 border border-orange-200";
+  if (n === "auto_approved")
+    return "bg-cyan-50 text-cyan-700 border border-cyan-200";
   if (n === "paid" || n === "resolved" || n === "approved")
     return "bg-emerald-50 text-emerald-700 border border-emerald-200";
   if (n === "in_progress")
     return "bg-blue-50 text-blue-700 border border-blue-200";
   return "bg-red-50 text-red-700 border border-red-200";
+}
+
+function statusLabel(s: string): string {
+  const n = s.toLowerCase();
+  if (n === "auto_approved") return "⚡ Auto-Approved";
+  if (n === "paid") return "✅ Paid";
+  if (n === "review") return "👁️ Review";
+  if (n === "blocked") return "🚫 Blocked";
+  return s;
 }
 
 function fraudColor(score: number): string {
@@ -1084,6 +1095,65 @@ export default function AdminDashboard() {
                   </span>
                 </div>
               </div>
+
+              {/* Auto-settlement threshold info */}
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <div className="text-[10px] font-bold text-slate-500 uppercase mb-2">Auto-Settlement Rules</div>
+                <div className="space-y-1.5 text-[10px]">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <span className="text-slate-600">Fraud Score ≤ 25 → <strong className="text-emerald-600">Auto-Approve + Instant UPI Payout</strong></span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-orange-500" />
+                    <span className="text-slate-600">Fraud Score 26-60 → <strong className="text-orange-600">Admin Review Queue</strong></span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-red-500" />
+                    <span className="text-slate-600">Fraud Score &gt; 60 → <strong className="text-red-600">Auto-Block</strong></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ─── Automation Pipeline Visualization ─── */}
+            <div className="glass-card p-4">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-600 mb-3 flex items-center gap-1.5">
+                <span>⚙️</span> Claim Processing Pipeline
+              </h3>
+              <div className="space-y-0">
+                {[
+                  { icon: "🌡️", title: "Environmental Monitor", desc: "OpenWeather + AQICN live APIs", status: "Active", color: "#f97316" },
+                  { icon: "📍", title: "GPS Verification", desc: "Browser Geolocation + zone match", status: "Active", color: "#3b82f6" },
+                  { icon: "🤖", title: "Isolation Forest ML", desc: "8-factor fraud scoring engine", status: "Active", color: "#8b5cf6" },
+                  { icon: "⚡", title: "Smart Settlement", desc: "Auto-approve (≤25) or admin review", status: "Auto", color: "#10b981" },
+                  { icon: "💰", title: "UPI Instant Payout", desc: "Razorpay sandbox settlement", status: "Ready", color: "#f59e0b" },
+                ].map((step, i) => (
+                  <div key={i} className="flex gap-2.5">
+                    <div className="flex flex-col items-center">
+                      <div
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-sm"
+                        style={{ background: `${step.color}15`, border: `1.5px solid ${step.color}40` }}
+                      >
+                        {step.icon}
+                      </div>
+                      {i < 4 && <div className="w-px h-4" style={{ background: `${step.color}30` }} />}
+                    </div>
+                    <div className="flex-1 pb-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-bold text-slate-800">{step.title}</span>
+                        <span
+                          className="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded-full"
+                          style={{ background: `${step.color}15`, color: step.color }}
+                        >
+                          {step.status}
+                        </span>
+                      </div>
+                      <div className="text-[9px] text-slate-500">{step.desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -1602,7 +1672,7 @@ export default function AdminDashboard() {
                     <span
                       className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${statusColor(c.status)}`}
                     >
-                      {c.status}
+                      {statusLabel(c.status)}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 text-[11px]">

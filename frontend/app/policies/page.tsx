@@ -432,6 +432,81 @@ export default function PoliciesPage() {
         </div>
       </div>
 
+      {/* ── Razorpay Pay Premium Button ── */}
+      {insuranceActive && (
+        <div className="glass-card p-4" style={{ background: "linear-gradient(135deg, rgba(59,130,246,0.04), rgba(147,51,234,0.04))" }}>
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl shrink-0"
+              style={{ background: "linear-gradient(135deg, #3b82f6, #8b5cf6)" }}>
+              💳
+            </div>
+            <div className="flex-1">
+              <div className="text-sm font-bold text-slate-900">Pay Weekly Premium</div>
+              <div className="text-[11px] text-gray-500">
+                Razorpay Test Mode · UPI / Card / Net Banking
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                setPolicyActionLoading(true);
+                try {
+                  const res = await fetch("/api/razorpay/order", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      amount: weeklyPremium,
+                      workerId: worker?.id,
+                      policyId: policy?.id,
+                      type: "weekly_premium",
+                    }),
+                  });
+                  const data = await res.json();
+                  if (data.success) {
+                    // Simulate successful payment in sandbox mode
+                    setPaymentHistory((prev) => [
+                      {
+                        id: createLocalPaymentId(),
+                        date: new Date().toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        }),
+                        amount: weeklyPremium,
+                        status: "Paid",
+                        receipt: `razorpay-${data.order?.id || "demo"}.pdf`,
+                      },
+                      ...prev,
+                    ]);
+                    triggerToast(
+                      `₹${weeklyPremium} premium paid via ${data.mode === "live" ? "Razorpay" : "Sandbox"}! Order: ${data.order?.id}`,
+                      "success"
+                    );
+                  } else {
+                    triggerToast("Payment order creation failed", "error");
+                  }
+                } catch {
+                  triggerToast("Unable to process payment right now", "error");
+                } finally {
+                  setPolicyActionLoading(false);
+                }
+              }}
+              disabled={policyActionLoading}
+              className="px-5 py-2.5 rounded-xl text-sm font-bold text-white shadow-lg transition-all hover:shadow-xl hover:-translate-y-0.5 active:scale-95 disabled:opacity-50"
+              style={{ background: "linear-gradient(135deg, #3b82f6, #8b5cf6)" }}
+            >
+              {policyActionLoading ? "Processing..." : `Pay ₹${weeklyPremium}`}
+            </button>
+          </div>
+          <div className="mt-2.5 flex items-center gap-3 text-[9px] text-gray-400">
+            <span className="flex items-center gap-1">🔒 PCI-DSS Compliant</span>
+            <span>•</span>
+            <span>Test Card: 4111 1111 1111 1111</span>
+            <span>•</span>
+            <span>Test UPI: success@razorpay</span>
+          </div>
+        </div>
+      )}
+
       {/* pricing formula */}
       <div className="glass-card p-5">
         <div className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-1">

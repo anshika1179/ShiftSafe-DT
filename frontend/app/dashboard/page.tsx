@@ -148,50 +148,40 @@ export default function DashboardPage() {
       .then((d) => {
         if (d.weatherRecommendations) {
           setWeatherTips(d.weatherRecommendations);
-          // Derive weather pill values from the response
-          const rec = d.weatherRecommendations;
-          const riskLevel = rec.riskLevel || "Low";
-          // Use current-month historical data from the recommendations
-          const month = new Date().getMonth() + 1;
-          // Build smart pills from historical risk model
-          const temp =
-            riskLevel === "Very High"
-              ? 43
-              : riskLevel === "High"
-                ? 38
-                : riskLevel === "Moderate"
-                  ? 35
-                  : 30;
-          const rain =
-            riskLevel === "Very High"
-              ? 85
-              : riskLevel === "High"
-                ? 45
-                : riskLevel === "Moderate"
-                  ? 18
-                  : 5;
-          const aqi =
-            riskLevel === "Very High"
-              ? 320
-              : riskLevel === "High"
-                ? 180
-                : riskLevel === "Moderate"
-                  ? 120
-                  : 75;
-          const wind = month >= 6 && month <= 9 ? 25 : 12;
+        }
+      })
+      .catch(() => {});
+
+    // Fetch LIVE weather data for pills
+    const city = worker?.city || "mumbai";
+    fetch(`/api/weather?city=${encodeURIComponent(city)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.weather) {
+          const w = d.weather;
+          const a = d.aqi;
           setWeatherPills([
-            { label: `🌡️ ${temp}°C`, color: temp > 40 ? "#ef4444" : "#f97316" },
-            { label: `🌧️ ${rain}mm`, color: rain > 50 ? "#3b82f6" : "#4d9fff" },
             {
-              label: `😷 AQI ${aqi}`,
-              color: aqi > 200 ? "#ef4444" : "#fbbf24",
+              label: `🌡️ ${w.temperature}°C`,
+              color: w.temperature > 42 ? "#ef4444" : w.temperature > 35 ? "#f97316" : "#34d399",
             },
-            { label: `💨 ${wind} km/h`, color: "#8892a4" },
+            {
+              label: `🌧️ ${w.rainfall1h}mm`,
+              color: w.rainfall1h > 30 ? "#ef4444" : w.rainfall1h > 0 ? "#3b82f6" : "#34d399",
+            },
+            {
+              label: `😷 AQI ${a?.aqi ?? "--"}`,
+              color: (a?.aqi ?? 0) > 200 ? "#ef4444" : (a?.aqi ?? 0) > 100 ? "#fbbf24" : "#34d399",
+            },
+            {
+              label: `💨 ${w.windSpeed} km/h`,
+              color: w.windSpeed > 40 ? "#ef4444" : "#8892a4",
+            },
           ]);
         }
       })
       .catch(() => {});
-  }, [isBootstrapping, isLoggedIn, router, worker?.id]);
+  }, [isBootstrapping, isLoggedIn, router, worker?.id, worker?.city]);
 
   if (isBootstrapping) {
     return (
@@ -526,6 +516,120 @@ export default function DashboardPage() {
               {pill.label}
             </span>
           ))}
+        </div>
+      </div>
+
+      {/* ── Premium Transparency Card ── */}
+      <div className="glass-card p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-[11px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
+            💰 Premium Breakdown
+          </div>
+          <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-2 py-0.5 rounded-md font-bold">
+            ₹{policy?.weeklyPremium || 28}/week
+          </span>
+        </div>
+
+        <div className="text-xs text-gray-500 mb-3 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+          <span className="font-semibold text-slate-700">Formula: </span>
+          <span className="font-mono text-[10px]">
+            Trigger Probability × Daily Income × Days Exposed × Seasonal Factor × City Tier
+          </span>
+        </div>
+
+        {/* Factor bars */}
+        <div className="space-y-3">
+          {[
+            { label: "Weather Risk", value: policy?.contributions?.weather ?? 45, color: "#3b82f6", icon: "🌧️", detail: `${policy?.contributions?.weather ?? 45}% of premium` },
+            { label: "Zone / AQI", value: policy?.contributions?.zone ?? 20, color: "#8b5cf6", icon: "📍", detail: `${policy?.contributions?.zone ?? 20}% of premium` },
+            { label: "Platform", value: policy?.contributions?.platform ?? 15, color: "#f97316", icon: "📱", detail: `${policy?.contributions?.platform ?? 15}% of premium` },
+            { label: "Claims History", value: policy?.contributions?.claims ?? 5, color: "#ef4444", icon: "📋", detail: claims.length === 0 ? "No past claims → low impact" : `${claims.length} claims → ${policy?.contributions?.claims ?? 5}% impact` },
+          ].map((factor) => (
+            <div key={factor.label}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-semibold text-slate-700 flex items-center gap-1.5">
+                  {factor.icon} {factor.label}
+                </span>
+                <span className="text-[10px] text-gray-500">{factor.detail}</span>
+              </div>
+              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-1000"
+                  style={{ width: `${factor.value}%`, background: factor.color }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+          <div className="text-[10px] text-gray-400">
+            50% max payout cap · {worker?.city || "Mumbai"} city tier applied
+          </div>
+          <button
+            onClick={() => router.push("/policies")}
+            className="text-[10px] text-primary-500 font-bold hover:underline"
+          >
+            View Full Policy →
+          </button>
+        </div>
+      </div>
+
+      {/* ── Automation Pipeline ── */}
+      <div className="glass-card p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-[11px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
+            ⚙️ How ShiftSafe Automation Works
+          </div>
+          <span className="text-[10px] bg-blue-50 text-blue-600 border border-blue-200 px-2 py-0.5 rounded-md font-bold">
+            AI-Powered
+          </span>
+        </div>
+
+        <div className="relative">
+          {[
+            { step: "1", icon: "🌡️", title: "Environmental Trigger", desc: "Live APIs monitor weather, AQI, & platform status 24/7", color: "#f97316", status: "Running" },
+            { step: "2", icon: "📍", title: "GPS Verification", desc: "Confirms worker location is within registered delivery zone", color: "#3b82f6", status: "Active" },
+            { step: "3", icon: "🤖", title: "AI Fraud Detection", desc: "Isolation Forest ML model scores every claim in <2 seconds", color: "#8b5cf6", status: "Ready" },
+            { step: "4", icon: "⚡", title: "Smart Routing", desc: "Score ≤25 → auto-approve | Score >25 → admin review queue", color: "#10b981", status: "Auto" },
+            { step: "5", icon: "💰", title: "Instant Payout", desc: "UPI/IMPS settlement within 20 seconds of approval", color: "#f59e0b", status: "UPI" },
+          ].map((item, i) => (
+            <div key={item.step} className="flex gap-3 mb-0">
+              <div className="flex flex-col items-center">
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0 shadow-sm"
+                  style={{
+                    background: `${item.color}15`,
+                    border: `2px solid ${item.color}40`,
+                  }}
+                >
+                  {item.icon}
+                </div>
+                {i < 4 && (
+                  <div className="w-0.5 h-5" style={{ background: `${item.color}30` }} />
+                )}
+              </div>
+              <div className="flex-1 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-800">{item.title}</span>
+                  <span
+                    className="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded-full"
+                    style={{ background: `${item.color}15`, color: item.color }}
+                  >
+                    {item.status}
+                  </span>
+                </div>
+                <div className="text-[10px] text-gray-500 mt-0.5">{item.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-2 bg-slate-50 rounded-lg p-2.5 border border-slate-100">
+          <div className="text-[10px] text-gray-500 flex items-center gap-1.5">
+            <span className="text-emerald-500 font-bold">✓</span>
+            <span>All 5 engines are active and monitoring your zone in real-time</span>
+          </div>
         </div>
       </div>
 

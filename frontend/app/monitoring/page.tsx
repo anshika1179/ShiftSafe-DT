@@ -58,6 +58,73 @@ interface EvidenceState {
   source: "upload" | "demo";
 }
 
+// ── Live Weather & AQI types ──
+interface LiveWeather {
+  temperature: number;
+  feelsLike: number;
+  humidity: number;
+  windSpeed: number;
+  windGust: number | null;
+  rainfall1h: number;
+  rainfall3h: number;
+  visibility: number;
+  pressure: number;
+  description: string;
+  icon: string;
+  cloudCover: number;
+}
+
+interface LiveAqi {
+  aqi: number;
+  level: string;
+  dominantPollutant: string;
+  pm25: number | null;
+  pm10: number | null;
+}
+
+interface TriggerAlert {
+  type: string;
+  emoji: string;
+  title: string;
+  severity: "moderate" | "high" | "severe";
+  value: string;
+  eligible: boolean;
+}
+
+interface LiveData {
+  weather: LiveWeather;
+  aqi: LiveAqi;
+  triggers: TriggerAlert[];
+  fetchedAt: string;
+  source: string;
+}
+
+function getAqiColor(aqi: number): string {
+  if (aqi <= 50) return "#34d399";
+  if (aqi <= 100) return "#fbbf24";
+  if (aqi <= 150) return "#fb923c";
+  if (aqi <= 200) return "#f87171";
+  if (aqi <= 300) return "#a855f7";
+  return "#dc2626";
+}
+
+function getRainfallStatus(mm: number): { label: string; color: string; alert: boolean } {
+  if (mm >= 64.5) return { label: "Extreme Rain ⚠️", color: "#dc2626", alert: true };
+  if (mm >= 30) return { label: "Heavy Rain", color: "#f87171", alert: true };
+  if (mm >= 15) return { label: "Moderate Rain", color: "#fbbf24", alert: false };
+  if (mm > 0) return { label: "Light Rain", color: "#60a5fa", alert: false };
+  return { label: "No Rain", color: "#34d399", alert: false };
+}
+
+function getTempStatus(temp: number): { label: string; color: string; alert: boolean } {
+  if (temp >= 45) return { label: "Extreme Heat ⚠️", color: "#dc2626", alert: true };
+  if (temp >= 42) return { label: "Heatwave", color: "#f87171", alert: true };
+  if (temp >= 38) return { label: "Very Hot", color: "#fb923c", alert: false };
+  if (temp >= 30) return { label: "Warm", color: "#fbbf24", alert: false };
+  if (temp >= 20) return { label: "Pleasant", color: "#34d399", alert: false };
+  return { label: "Cool", color: "#60a5fa", alert: false };
+}
+
 export default function MonitoringPage() {
   const router = useRouter();
   const { worker, addClaim, isLoggedIn, isBootstrapping } = useAppState();
@@ -67,15 +134,44 @@ export default function MonitoringPage() {
   const evidenceInputRef = useRef<HTMLInputElement | null>(null);
   const gpsRequestRef = useRef(0);
   const gpsCheckingRef = useRef(false);
-  const [mapZoom, setMapZoom] = useState(12);
+  const [mapZoom, setMapZoom] = useState(14);
   const [gpsState, setGpsState] = useState<GpsState>({
     status: "idle",
     message: "GPS check pending",
   });
 
+  // ── Live weather/AQI state ──
+  const [liveData, setLiveData] = useState<LiveData | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState(true);
+  const [lastRefresh, setLastRefresh] = useState<string>("");
+
   useEffect(() => {
     if (!isBootstrapping && !isLoggedIn) router.replace("/");
   }, [isBootstrapping, isLoggedIn, router]);
+
+  // ── Fetch live weather & AQI ──
+  const fetchWeather = useCallback(async (lat?: number, lon?: number) => {
+    setWeatherLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (lat !== undefined && lon !== undefined) {
+        params.set("lat", lat.toFixed(6));
+        params.set("lon", lon.toFixed(6));
+      }
+      params.set("city", worker?.city || "mumbai");
+
+      const res = await fetch(`/api/weather?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setLiveData(data);
+        setLastRefresh(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
+      }
+    } catch {
+      // Weather fetch failed silently; UI shows fallback
+    } finally {
+      setWeatherLoading(false);
+    }
+  }, [worker?.city]);
 
   const verifyGps = useCallback(async () => {
     if (
@@ -119,7 +215,7 @@ export default function MonitoringPage() {
     setGpsState((prev) => ({
       ...prev,
       status: "checking",
-      message: "Checking live GPS lock...",
+      message: "Acquiring GPS lock...",
       lastCheckedAt: new Date().toISOString(),
     }));
 
@@ -156,6 +252,9 @@ export default function MonitoringPage() {
         lon: Number(position.coords.longitude.toFixed(6)),
       };
       const accuracyMeters = Math.round(position.coords.accuracy || 0);
+
+      // Fetch weather for the GPS location
+      void fetchWeather(workerLocation.lat, workerLocation.lon);
 
       const res = await fetch("/api/gps/verify", {
         method: "POST",
@@ -228,6 +327,9 @@ export default function MonitoringPage() {
           lastCheckedAt: new Date().toISOString(),
         });
       }
+
+      // Still fetch weather using city fallback
+      void fetchWeather();
     } finally {
       if (checkingWatchdog !== undefined) {
         window.clearTimeout(checkingWatchdog);
@@ -239,12 +341,25 @@ export default function MonitoringPage() {
         setGpsChecking(false);
       }
     }
-  }, [worker?.city, worker?.zone]);
+  }, [worker?.city, worker?.zone, fetchWeather]);
 
   useEffect(() => {
     if (isBootstrapping || !isLoggedIn) return;
     void verifyGps();
   }, [isBootstrapping, isLoggedIn, verifyGps]);
+
+  // Auto-refresh weather every 5 minutes
+  useEffect(() => {
+    if (!isLoggedIn || isBootstrapping) return;
+    const interval = setInterval(() => {
+      if (gpsState.coords) {
+        void fetchWeather(gpsState.coords.lat, gpsState.coords.lon);
+      } else {
+        void fetchWeather();
+      }
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [isLoggedIn, isBootstrapping, gpsState.coords, fetchWeather]);
 
   if (isBootstrapping) {
     return null;
@@ -280,8 +395,8 @@ export default function MonitoringPage() {
         body: JSON.stringify({
           workerId: worker.id,
           simulate: true,
-          triggerType: "curfew",
-          severity: "high",
+          triggerType: liveData?.triggers?.[0]?.type || "curfew",
+          severity: liveData?.triggers?.[0]?.severity || "high",
           zone: worker.zone || "Andheri East",
           city: worker.city || "Mumbai",
           workerLocation: gpsState.coords,
@@ -316,8 +431,8 @@ export default function MonitoringPage() {
       if (status !== "blocked") {
         addClaim({
           id: claimData.claimId || createLocalClaimId(),
-          triggerType: "curfew",
-          triggerEmoji: getTriggerEmoji("curfew"),
+          triggerType: liveData?.triggers?.[0]?.type || "curfew",
+          triggerEmoji: getTriggerEmoji(liveData?.triggers?.[0]?.type || "curfew"),
           triggerName: "Local Map Disruption",
           triggerValue: "Zone disruption validated with evidence",
           amount: settledAmount,
@@ -390,141 +505,244 @@ export default function MonitoringPage() {
 
   const gpsStatusLabel =
     gpsState.status === "verified"
-      ? "GPS Verified"
+      ? "✅ GPS Verified"
       : gpsState.status === "approximate"
-        ? "GPS Approximate"
+        ? "⚠️ GPS Approximate"
         : gpsState.status === "idle"
-          ? "GPS Pending"
+          ? "📍 GPS Pending"
           : gpsState.status === "checking"
-            ? "Checking GPS"
+            ? "🔄 Checking GPS..."
             : gpsState.status === "manual_review"
-              ? "Manual Review"
+              ? "📋 Manual Review"
               : gpsState.status === "denied"
-                ? "Permission Needed"
+                ? "🚫 Permission Needed"
                 : gpsState.status === "unsupported"
-                  ? "GPS Unsupported"
-                  : "GPS Unavailable";
+                  ? "❌ GPS Unsupported"
+                  : "⚠️ GPS Unavailable";
 
+  // Map uses GPS coordinates when available
   const mapQuery = gpsState.coords
     ? `${gpsState.coords.lat},${gpsState.coords.lon}`
     : `${worker?.zone || "Andheri East"}, ${worker?.city || "Mumbai"}, India`;
 
+  // Weather data with fallback
+  const weather = liveData?.weather;
+  const aqiData = liveData?.aqi;
+  const activeTriggers = liveData?.triggers || [];
+  const rainfallStatus = getRainfallStatus(weather?.rainfall1h || 0);
+  const tempStatus = getTempStatus(weather?.temperature || 30);
+
   return (
     <div className="space-y-4 max-w-120 mx-auto fade-in pb-8">
+      {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             Live Monitoring
+            <span className="live-dot" />
           </h1>
           <p className="text-sm text-gray-500">
-            Real-time environmental data with admin-reviewed claims
+            Real-time weather · AQI · GPS verification
           </p>
         </div>
-        <button
-          onClick={() => void verifyGps()}
-          disabled={gpsChecking}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-100 text-xs font-semibold text-slate-600 hover:bg-slate-200 transition disabled:opacity-60"
-        >
-          <span>🔄</span> {gpsChecking ? "Checking..." : "Refresh GPS"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              if (gpsState.coords) void fetchWeather(gpsState.coords.lat, gpsState.coords.lon);
+              else void fetchWeather();
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-xs font-semibold text-blue-600 hover:bg-blue-100 transition border border-blue-200"
+          >
+            🌤️ Refresh Data
+          </button>
+          <button
+            onClick={() => void verifyGps()}
+            disabled={gpsChecking}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-xs font-semibold text-slate-600 hover:bg-slate-200 transition disabled:opacity-60"
+          >
+            📍 {gpsChecking ? "Checking..." : "Refresh GPS"}
+          </button>
+        </div>
       </div>
 
-      {/* Location Banner */}
+      {/* ── GPS Location Banner ── */}
       <div
-        className={`border p-3 rounded-lg flex items-center justify-between ${gpsBannerClasses}`}
+        className={`border p-3 rounded-xl flex items-center justify-between gap-2 ${gpsBannerClasses}`}
       >
-        <div className="text-xs flex flex-wrap gap-1">
-          <span>📍</span>
-          <span>{gpsStatusLabel}:</span>
-          <span className="font-bold">{worker?.zone || "Mumbai"}</span>
+        <div className="text-xs flex flex-wrap items-center gap-1.5">
+          <span className="font-bold text-sm">{gpsStatusLabel}</span>
+          <span className="opacity-80">·</span>
+          <span className="font-semibold">{worker?.zone || "Mumbai"}</span>
           {typeof gpsState.distanceKm === "number" && (
-            <span>• {gpsState.distanceKm.toFixed(2)} km from mapped zone</span>
+            <span className="bg-white/60 px-1.5 py-0.5 rounded">{gpsState.distanceKm.toFixed(2)} km from zone</span>
           )}
           {typeof gpsState.accuracyMeters === "number" && (
-            <span>• ±{gpsState.accuracyMeters}m accuracy</span>
+            <span className="bg-white/60 px-1.5 py-0.5 rounded">±{gpsState.accuracyMeters}m</span>
           )}
-          <span>• {gpsState.message}</span>
         </div>
         <button
           onClick={() => void verifyGps()}
           disabled={gpsChecking}
-          className="px-2.5 py-1 rounded text-[10px] font-bold uppercase shrink-0 bg-white/70 border border-current/20 disabled:opacity-60"
+          className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase shrink-0 bg-white/70 border border-current/20 disabled:opacity-60 hover:bg-white transition"
         >
-          {gpsChecking ? "Checking" : "Re-check"}
+          {gpsChecking ? "..." : "Re-check"}
         </button>
       </div>
 
-      {/* Disruption Alert */}
-      <div className="bg-red-50 border border-red-200 p-3 rounded-lg flex gap-3 shadow-sm">
-        <div className="text-red-500 text-xl">⚠️</div>
-        <div className="flex-1">
-          <div className="text-sm font-bold text-red-700">
-            Active Disruption Detected: Heavy Rain
-          </div>
-          <div className="text-xs text-red-600 flex items-center gap-1 mt-0.5">
-            <span className="w-3 h-3 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[8px]">
-              ✓
-            </span>
-            You are eligible to submit a review-gated claim
+      {/* ── Active Trigger Alerts ── */}
+      {activeTriggers.length > 0 && (
+        <div className="space-y-2">
+          {activeTriggers.map((trigger, i) => (
+            <div
+              key={i}
+              className={`border p-3 rounded-xl flex gap-3 shadow-sm ${
+                trigger.severity === "severe"
+                  ? "bg-red-50 border-red-300"
+                  : trigger.severity === "high"
+                    ? "bg-orange-50 border-orange-300"
+                    : "bg-amber-50 border-amber-300"
+              }`}
+            >
+              <div className="text-2xl">{trigger.emoji}</div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className={`text-sm font-bold ${
+                    trigger.severity === "severe" ? "text-red-700" : trigger.severity === "high" ? "text-orange-700" : "text-amber-700"
+                  }`}>
+                    {trigger.title}
+                  </span>
+                  <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                    trigger.severity === "severe"
+                      ? "bg-red-200 text-red-800"
+                      : trigger.severity === "high"
+                        ? "bg-orange-200 text-orange-800"
+                        : "bg-amber-200 text-amber-800"
+                  }`}>
+                    {trigger.severity}
+                  </span>
+                </div>
+                <div className="text-xs text-slate-600 mt-0.5">{trigger.value}</div>
+                {trigger.eligible && (
+                  <div className="text-[10px] text-emerald-600 font-semibold mt-1 flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[8px]">✓</span>
+                    You are eligible to file a claim for this event
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeTriggers.length === 0 && !weatherLoading && (
+        <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex gap-3">
+          <div className="text-emerald-500 text-xl">✅</div>
+          <div>
+            <div className="text-sm font-bold text-emerald-700">No Active Disruptions</div>
+            <div className="text-xs text-emerald-600">
+              Weather and air quality are within safe limits. You&apos;re covered if conditions change.
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Metrics Grid */}
+      {/* ── Live Conditions Grid ── */}
       <div>
-        <div className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-2 px-1">
-          Live Conditions
+        <div className="flex items-center justify-between mb-2 px-1">
+          <div className="text-[11px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
+            <span className="live-dot" style={{ width: 6, height: 6 }} />
+            Live Conditions
+          </div>
+          {lastRefresh && (
+            <div className="text-[10px] text-gray-400">
+              Updated {lastRefresh}
+              {liveData?.source === "live" && <span className="text-emerald-500 ml-1">• API Live</span>}
+            </div>
+          )}
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          {/* Rainfall */}
-          <div className="border border-red-200 bg-red-50/50 p-3 rounded-xl relative">
-            <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-            <div className="text-xl mb-1">🌧️</div>
-            <div className="text-[10px] font-bold text-gray-500 uppercase">
-              Rainfall
+
+        {weatherLoading && !liveData ? (
+          <div className="grid grid-cols-2 gap-3">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="skeleton h-28 rounded-xl" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {/* Rainfall */}
+            <div className={`border p-3 rounded-xl relative ${
+              rainfallStatus.alert ? "border-red-200 bg-red-50/50" : "border-slate-100 bg-white"
+            }`}>
+              {rainfallStatus.alert && (
+                <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+              )}
+              <div className="text-xl mb-1">🌧️</div>
+              <div className="text-[10px] font-bold text-gray-500 uppercase">Rainfall</div>
+              <div className="text-xl font-black" style={{ color: rainfallStatus.color }}>
+                {weather?.rainfall1h ?? 0} mm
+              </div>
+              <div className="text-[9px] font-bold mt-1" style={{ color: rainfallStatus.color }}>
+                {rainfallStatus.label}
+              </div>
             </div>
-            <div className="text-xl font-black text-red-600">65 mm</div>
-            <div className="text-[9px] text-red-500 font-bold mt-1">
-              ⚠️ Heavy Rain Detected
+
+            {/* Temperature */}
+            <div className={`border p-3 rounded-xl relative ${
+              tempStatus.alert ? "border-red-200 bg-red-50/50" : "border-slate-100 bg-white"
+            }`}>
+              {tempStatus.alert && (
+                <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+              )}
+              <div className="text-xl mb-1">🌡️</div>
+              <div className="text-[10px] font-bold text-gray-500 uppercase">Temperature</div>
+              <div className="text-xl font-black" style={{ color: tempStatus.color }}>
+                {weather?.temperature ?? 30}°C
+              </div>
+              <div className="text-[9px] text-slate-500 mt-1">
+                Feels {weather?.feelsLike ?? 30}°C · {weather?.humidity ?? 50}% humidity
+              </div>
+            </div>
+
+            {/* AQI */}
+            <div className={`border p-3 rounded-xl relative ${
+              (aqiData?.aqi ?? 0) >= 200 ? "border-red-200 bg-red-50/50" : "border-slate-100 bg-white"
+            }`}>
+              {(aqiData?.aqi ?? 0) >= 200 && (
+                <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+              )}
+              <div className="text-xl mb-1">💨</div>
+              <div className="text-[10px] font-bold text-gray-500 uppercase">Air Quality</div>
+              <div className="text-xl font-black" style={{ color: getAqiColor(aqiData?.aqi ?? 50) }}>
+                {aqiData?.aqi ?? "—"}
+              </div>
+              <div className="text-[9px] font-bold mt-1" style={{ color: getAqiColor(aqiData?.aqi ?? 50) }}>
+                {aqiData?.level ?? "Loading..."}
+              </div>
+              {aqiData?.pm25 && (
+                <div className="text-[8px] text-gray-400 mt-0.5">PM2.5: {aqiData.pm25} · {aqiData.dominantPollutant}</div>
+              )}
+            </div>
+
+            {/* Wind + Visibility */}
+            <div className="border border-slate-100 bg-white p-3 rounded-xl">
+              <div className="text-xl mb-1">💨</div>
+              <div className="text-[10px] font-bold text-gray-500 uppercase">Wind & Visibility</div>
+              <div className="text-xl font-black text-slate-800">
+                {weather?.windSpeed ?? 0} <span className="text-sm font-normal text-gray-400">km/h</span>
+              </div>
+              <div className="text-[9px] text-slate-500 mt-1">
+                Visibility: {((weather?.visibility ?? 10000) / 1000).toFixed(1)} km
+                {weather?.windGust ? ` · Gust: ${weather.windGust} km/h` : ""}
+              </div>
             </div>
           </div>
-          {/* Temperature */}
-          <div className="border border-slate-100 bg-white p-3 rounded-xl shadow-sm">
-            <div className="text-xl mb-1">🌡️</div>
-            <div className="text-[10px] font-bold text-gray-500 uppercase">
-              Temperature
-            </div>
-            <div className="text-xl font-black text-slate-800">35°C</div>
-            <div className="text-[9px] text-slate-500 mt-1">Humidity: 72%</div>
-          </div>
-          {/* AQI */}
-          <div className="border border-slate-100 bg-white p-3 rounded-xl shadow-sm">
-            <div className="text-xl mb-1">💨</div>
-            <div className="text-[10px] font-bold text-gray-500 uppercase">
-              AQI Level
-            </div>
-            <div className="text-xl font-black text-slate-800">26</div>
-            <div className="text-[9px] text-emerald-500 font-bold mt-1">
-              Good
-            </div>
-          </div>
-          {/* Traffic */}
-          <div className="border border-slate-100 bg-white p-3 rounded-xl shadow-sm">
-            <div className="text-xl mb-1">🚦</div>
-            <div className="text-[10px] font-bold text-gray-500 uppercase">
-              Traffic Ratio
-            </div>
-            <div className="text-xl font-black text-slate-800">0.80</div>
-            <div className="text-[9px] text-emerald-500 font-bold mt-1">
-              Normal flow
-            </div>
-          </div>
-        </div>
+        )}
       </div>
 
+      {/* ── Map Section ── */}
       <div className="glass-card overflow-hidden">
         <div className="h-56 relative bg-slate-200 w-full">
-          {/* Google Maps Embed */}
+          {/* Google Maps Embed — zoomed to GPS coords when available */}
           <iframe
             src={`https://maps.google.com/maps?q=${encodeURIComponent(mapQuery)}&t=&z=${mapZoom}&ie=UTF8&iwloc=&output=embed`}
             width="100%"
@@ -553,49 +771,64 @@ export default function MonitoringPage() {
             </button>
           </div>
 
-          {/* Zoom Level Indicator */}
-          <div className="absolute bottom-2 left-12 bg-white/90 px-2 py-1 rounded-md text-[9px] font-bold text-slate-500 border border-slate-200 shadow-sm">
-            {mapZoom}× Zoom
+          {/* GPS Badge */}
+          <div className={`absolute top-2 left-2 px-2.5 py-1 rounded-lg text-[10px] font-bold shadow-sm border ${
+            gpsState.status === "verified"
+              ? "bg-emerald-500 text-white border-emerald-600"
+              : gpsState.status === "approximate"
+                ? "bg-amber-500 text-white border-amber-600"
+                : "bg-white/90 text-slate-600 border-slate-200"
+          }`}>
+            {gpsState.coords ? `📍 ${gpsState.coords.lat.toFixed(4)}, ${gpsState.coords.lon.toFixed(4)}` : "📍 Zone center"}
           </div>
 
+          {/* Map Status */}
           <div className="absolute top-2 right-2 bg-white/90 p-2 rounded-lg shadow-sm border border-slate-200">
-            <div className="text-[10px] uppercase font-bold text-slate-500">
-              Status
-            </div>
-            <div className="text-xs font-semibold text-amber-600 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
-              Disruption detected
+            <div className="text-[10px] uppercase font-bold text-slate-500">Status</div>
+            <div className={`text-xs font-semibold flex items-center gap-1 ${
+              activeTriggers.length > 0 ? "text-amber-600" : "text-emerald-600"
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${
+                activeTriggers.length > 0 ? "bg-amber-500 animate-pulse" : "bg-emerald-500"
+              }`} />
+              {activeTriggers.length > 0 ? "Disruption detected" : "All clear"}
             </div>
           </div>
         </div>
 
+        {/* ── Claim Calculation Panel ── */}
         <div className="p-4 bg-slate-800 text-white">
-          <h3 className="font-bold text-lg mb-2">
-            Claim Calculation Breakdown
+          <h3 className="font-bold text-lg mb-2 flex items-center gap-2">
+            Claim Calculation
+            <span className="text-[10px] font-normal bg-slate-700 px-2 py-0.5 rounded-full text-gray-300">Transparent</span>
           </h3>
-          <div className="font-mono text-sm text-slate-300 space-y-1 bg-slate-900 border border-slate-700 p-3 rounded-lg">
-            <div>
-              Avg Daily Income (₹):{" "}
-              <span className="text-white">{dailyIncome}</span>
-            </div>
-            <div>
-              Working Hours/Day:{" "}
-              <span className="text-white">{hoursPerDay}</span>
-            </div>
-            <div className="pb-1 border-b border-slate-700">
-              Average Income/Hour: {dailyIncome}/{hoursPerDay}={" "}
-              <span className="text-white">₹{avgIncomePerHour}</span>
-            </div>
-            <div className="pt-1 text-primary-400">
-              Day claim: {lostHours} * Average Income/Hour = {lostHours} *{" "}
-              {avgIncomePerHour} ~ ₹{calculatedClaim}
-            </div>
-            <div className="font-bold text-lg text-emerald-400 mt-1">
-              Claim: ₹{calculatedClaim}
-            </div>
+
+          {/* Formula Steps */}
+          <div className="space-y-2 mb-3">
+            {[
+              { label: "① Daily Income", formula: `₹${worker?.avgWeeklyEarnings ?? 0} ÷ 7`, result: `₹${dailyIncome}` },
+              { label: "② Income Per Hour", formula: `₹${dailyIncome} ÷ ${hoursPerDay} hrs`, result: `₹${avgIncomePerHour}` },
+              { label: "③ Lost Hours (Disruption)", formula: "Standard disruption period", result: `${lostHours} hrs` },
+              { label: "④ Claim Amount", formula: `${lostHours} × ₹${avgIncomePerHour}`, result: `₹${calculatedClaim}`, highlight: true },
+            ].map((step) => (
+              <div key={step.label} className={`flex items-center justify-between px-3 py-2 rounded-lg ${
+                step.highlight ? "bg-emerald-500/20 border border-emerald-500/30" : "bg-slate-700/50"
+              }`}>
+                <div>
+                  <div className={`text-[10px] font-bold uppercase ${step.highlight ? "text-emerald-300" : "text-slate-400"}`}>
+                    {step.label}
+                  </div>
+                  <div className="text-xs text-slate-300 font-mono">{step.formula}</div>
+                </div>
+                <div className={`text-sm font-black ${step.highlight ? "text-emerald-400" : "text-white"}`}>
+                  {step.result}
+                </div>
+              </div>
+            ))}
           </div>
 
-          <div className="mt-3 bg-slate-900 p-3 rounded-lg border border-slate-700">
+          {/* Evidence */}
+          <div className="bg-slate-900 p-3 rounded-lg border border-slate-700">
             <div className="text-[10px] uppercase font-bold text-slate-400 mb-2">
               Evidence Required
             </div>
@@ -637,6 +870,7 @@ export default function MonitoringPage() {
             )}
           </div>
 
+          {/* Submit Claim Button */}
           <button
             onClick={handleClaim}
             disabled={processing || !evidence}
@@ -652,6 +886,50 @@ export default function MonitoringPage() {
               </div>
             )}
           </button>
+        </div>
+      </div>
+
+      {/* ── Automation Pipeline Visualization ── */}
+      <div className="glass-card p-4">
+        <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+          ⚙️ How Automation Works
+          <span className="text-[9px] text-gray-400 font-normal">Step-by-step pipeline</span>
+        </h3>
+        <div className="space-y-0">
+          {[
+            { step: 1, icon: "🌡️", title: "Environmental Trigger", desc: "Live APIs detect weather/AQI breach", status: activeTriggers.length > 0 ? "active" : "monitoring", color: activeTriggers.length > 0 ? "#f97316" : "#94a3b8" },
+            { step: 2, icon: "📍", title: "GPS Verification", desc: "Confirm worker location within zone", status: gpsState.status === "verified" ? "active" : "pending", color: gpsState.status === "verified" ? "#10b981" : "#94a3b8" },
+            { step: 3, icon: "🤖", title: "AI Fraud Screening", desc: "Isolation Forest ML model scores risk", status: "ready", color: "#3b82f6" },
+            { step: 4, icon: "👨‍💼", title: "Admin Review Gate", desc: "High-risk → manual | Low-risk → auto-approve", status: "ready", color: "#8b5cf6" },
+            { step: 5, icon: "💰", title: "Settlement & Payout", desc: "UPI/IMPS instant transfer within 20 seconds", status: "ready", color: "#10b981" },
+          ].map((item, i) => (
+            <div key={item.step} className="flex gap-3">
+              {/* Connector Line */}
+              <div className="flex flex-col items-center">
+                <div
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-sm shadow-sm border-2"
+                  style={{ borderColor: item.color, background: `${item.color}15` }}
+                >
+                  {item.icon}
+                </div>
+                {i < 4 && (
+                  <div className="w-0.5 h-6 bg-slate-200" />
+                )}
+              </div>
+              <div className="flex-1 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-800">{item.title}</span>
+                  <span
+                    className="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded-full"
+                    style={{ background: `${item.color}20`, color: item.color }}
+                  >
+                    {item.status}
+                  </span>
+                </div>
+                <div className="text-[10px] text-gray-500">{item.desc}</div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
