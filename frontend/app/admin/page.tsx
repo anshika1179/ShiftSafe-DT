@@ -885,7 +885,7 @@ export default function AdminDashboard() {
       {tab === "overview" && (
         <div className="space-y-4">
           {/* KPI Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {[
               {
                 title: "Active Policies",
@@ -930,7 +930,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* Second Row */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {[
               {
                 title: "Review Queue",
@@ -963,7 +963,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* Predictive + Actuarial + Automation */}
-          <div className="grid sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="glass-card p-4">
               <h3 className="text-xs font-bold uppercase tracking-widest text-slate-600 mb-3 flex items-center gap-1.5">
                 <span>🔮</span> Next-Week Forecast
