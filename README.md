@@ -13,6 +13,7 @@ _An AI-enabled parametric micro-insurance platform empowering platform-based del
 > 🏆 **Live Demo:** [https://shift-safe-dt-frontend-livid.vercel.app](https://shift-safe-dt-frontend-livid.vercel.app)  
 > 📊 **Pitch Deck:** [View Presentation](https://docs.google.com/presentation/d/1eJckGP3-lfbzZO8o3h-LbPPiqFjLASzguZZHBeRzLW0/edit?usp=sharing)  
 > 🎥 **Video Demo:** [Watch on Google Drive](https://drive.google.com/file/d/1ix3dya3Z1Aokun7tx29lQGWj5WolgCzf/view?usp=drive_link)
+> 🎬 **Pitch Video:** [Watch on YouTube](https://youtu.be/EkIxbAylMlI?si=k3dAWrvtoWwRxlT8)
 
 ---
 
@@ -1490,7 +1491,8 @@ OTP_DEMO_CODE=123456  (hardcoded fallback already present)
 
 - 🌐 **Live Deployed Platform:** [ShiftSafe-DT on Vercel](https://shift-safe-dt-frontend-livid.vercel.app/) _(Demo OTP: `123456` · Demo Aadhaar: `123456789012` · Admin: `admin@shiftsafe.in / shiftsafe2026`)_
 - ▶️ **Demo Video:** [▶️ Watch Full System Demo](https://drive.google.com/file/d/1ix3dya3Z1Aokun7tx29lQGWj5WolgCzf/view?usp=drive_link)
-- 📊 **Pitch Presentation:** [View Hackathon Pitch Deck](https://docs.google.com/presentation/d/1eJckGP3-lfbzZO8o3h-LbPPiqFjLASzguZZHBeRzLW0/edit?usp=sharing)
+- 📊 **Pitch Deck:** [View Hackathon Pitch Deck](https://docs.google.com/presentation/d/1eJckGP3-lfbzZO8o3h-LbPPiqFjLASzguZZHBeRzLW0/edit?usp=sharing)
+- 🎬 **Pitch Video:** [Watch Pitch Video](https://youtu.be/EkIxbAylMlI?si=k3dAWrvtoWwRxlT8)
 - 💻 **Source Code:** [GitHub - ShiftSafe-DT](https://github.com/anshika1179/ShiftSafe-DT)
 
 <div align="center">
