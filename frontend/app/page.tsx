@@ -82,7 +82,7 @@ export default function SplashPage() {
   }
 
   return (
-    <div className="fixed inset-0 z-100 bg-slate-900 text-white overflow-y-auto fade-in always-dark">
+    <div className="fixed inset-0 z-100 bg-slate-50 text-slate-900 overflow-y-auto fade-in">
       {/* Animated background */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] bg-primary-500/15 rounded-full blur-[120px] animate-float" />
@@ -102,18 +102,18 @@ export default function SplashPage() {
 
           <h1 className="text-4xl font-extrabold tracking-tight mb-3 text-center">
             Shift<span className="text-primary-500">Safe</span>{" "}
-            <span className="text-slate-400 font-medium">DT</span>
+            <span className="text-slate-500 font-medium">DT</span>
           </h1>
 
-          <p className="text-base text-slate-300 text-center max-w-xs leading-relaxed mb-4">
+          <p className="text-base text-slate-600 text-center max-w-xs leading-relaxed mb-4">
             AI-powered parametric income protection for India&apos;s{" "}
-            <span className="font-semibold text-white">300M+ gig workers</span>
+            <span className="font-semibold text-slate-900">300M+ gig workers</span>
           </p>
 
           {/* AI badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-800/80 border border-slate-700 backdrop-blur-sm">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 border border-slate-200 backdrop-blur-sm">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
               AI Risk Engine · Live
             </span>
           </div>
@@ -123,8 +123,8 @@ export default function SplashPage() {
         <div className="grid grid-cols-4 gap-2 mb-8">
           {STATS.map((s, i) => (
             <div key={i} className="text-center">
-              <div className="text-lg font-extrabold text-white">{s.value}</div>
-              <div className="text-[9px] text-slate-400 uppercase tracking-wider font-semibold leading-tight mt-0.5">
+              <div className="text-lg font-extrabold text-slate-900">{s.value}</div>
+              <div className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold leading-tight mt-0.5">
                 {s.label}
               </div>
             </div>
@@ -143,8 +143,8 @@ export default function SplashPage() {
                 onClick={() => setActiveFeature(i)}
                 className={`text-left p-4 rounded-2xl border transition-all duration-300 ${
                   activeFeature === i
-                    ? "bg-slate-800/90 border-slate-600 shadow-lg shadow-slate-900/50 scale-[1.02]"
-                    : "bg-slate-800/40 border-slate-700/50 hover:bg-slate-800/60"
+                    ? "bg-white border-slate-300 shadow-lg shadow-slate-200/50 scale-[1.02]"
+                    : "bg-white/60 border-slate-200 hover:bg-white"
                 }`}
               >
                 <div
@@ -153,8 +153,8 @@ export default function SplashPage() {
                 >
                   {f.emoji}
                 </div>
-                <div className="text-xs font-bold text-white mb-1">{f.title}</div>
-                <div className="text-[10px] text-slate-400 leading-snug line-clamp-2">{f.desc}</div>
+                <div className="text-xs font-bold text-slate-900 mb-1">{f.title}</div>
+                <div className="text-[10px] text-slate-500 leading-snug line-clamp-2">{f.desc}</div>
               </button>
             ))}
           </div>
@@ -171,13 +171,13 @@ export default function SplashPage() {
           </button>
           <button
             onClick={() => router.push("/login")}
-            className="w-full py-3.5 rounded-xl text-base font-bold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+            className="w-full py-3.5 rounded-xl text-base font-bold bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
           >
             🔐 Login with OTP
           </button>
           <button
             onClick={() => router.push("/admin")}
-            className="w-full py-3 rounded-xl text-sm font-bold text-slate-400 border border-slate-700/60 bg-slate-800/40 hover:bg-slate-800 hover:text-white hover:border-purple-500/40 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group"
+            className="w-full py-3 rounded-xl text-sm font-bold text-slate-600 border border-slate-200 bg-white/60 hover:bg-white hover:text-slate-900 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group"
           >
             <span className="w-5 h-5 rounded-md bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-[10px]">
               👑
@@ -199,13 +199,13 @@ export default function SplashPage() {
               { step: "3", icon: "📡", title: "Monitor", desc: "Our 5-source parametric engine watches for disruptions 24/7" },
               { step: "4", icon: "💰", title: "Get Paid", desc: "Admin-reviewed claims settle to your UPI instantly" },
             ].map((s, i) => (
-              <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/40 border border-slate-700/50">
+              <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-white/60 border border-slate-200">
                 <div className="w-8 h-8 rounded-lg bg-primary-500/15 border border-primary-500/25 flex items-center justify-center text-sm shrink-0">
                   {s.icon}
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-white">{s.title}</div>
-                  <div className="text-[10px] text-slate-400 leading-snug">{s.desc}</div>
+                  <div className="text-xs font-bold text-slate-900">{s.title}</div>
+                  <div className="text-[10px] text-slate-500 leading-snug">{s.desc}</div>
                 </div>
               </div>
             ))}
@@ -214,17 +214,17 @@ export default function SplashPage() {
 
         {/* FAQ Section */}
         <div className="mb-8">
-          <h3 className="text-sm font-bold mb-3 text-center text-slate-300">
+          <h3 className="text-sm font-bold mb-3 text-center text-slate-700">
             Frequently Asked Questions
           </h3>
           <div className="space-y-2.5">
             {FAQS.map((faq, i) => (
               <details key={i} className="group">
-                <summary className="cursor-pointer p-3.5 rounded-xl bg-slate-800/60 border border-slate-700 text-sm font-semibold text-primary-400 list-none flex items-center justify-between hover:bg-slate-800 transition-all">
+                <summary className="cursor-pointer p-3.5 rounded-xl bg-white/60 border border-slate-200 text-sm font-semibold text-primary-400 list-none flex items-center justify-between hover:bg-white transition-all">
                   {faq.q}
                   <span className="text-slate-500 group-open:rotate-180 transition-transform text-xs">▼</span>
                 </summary>
-                <div className="px-4 py-3 text-xs text-slate-400 leading-relaxed">
+                <div className="px-4 py-3 text-xs text-slate-600 leading-relaxed">
                   {faq.a}
                 </div>
               </details>
