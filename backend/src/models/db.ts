@@ -632,6 +632,18 @@ async function initSchema(db: any) {
       paid_at TEXT,
       FOREIGN KEY (worker_id) REFERENCES workers(id)
     );
+    CREATE TABLE IF NOT EXISTS premium_payments (
+      id TEXT PRIMARY KEY,
+      worker_id TEXT NOT NULL,
+      policy_id TEXT,
+      razorpay_order_id TEXT,
+      razorpay_payment_id TEXT,
+      amount REAL NOT NULL,
+      status TEXT DEFAULT 'created',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      paid_at TEXT,
+      FOREIGN KEY (worker_id) REFERENCES workers(id)
+    );
   `);
 
   await ensureWorkerPayoutColumns(db);

@@ -92,6 +92,72 @@ const CITIES = [
     tier: 2,
     tierLabel: "Tier 2 · Urban",
   },
+  {
+    name: "Vadodara",
+    zones: ["Alkapuri", "Fatehgunj", "Sayajigunj", "Manjalpur", "Gotri"],
+    tier: 2,
+    tierLabel: "Tier 2 · Urban",
+  },
+  {
+    name: "Surat",
+    zones: ["Adajan", "Vesu", "Athwa", "Varachha"],
+    tier: 2,
+    tierLabel: "Tier 2 · Urban",
+  },
+  {
+    name: "Kolkata",
+    zones: ["Salt Lake", "Park Street", "New Town", "Howrah"],
+    tier: 1,
+    tierLabel: "Tier 1 · Metro",
+  },
+  {
+    name: "Nagpur",
+    zones: ["Dharampeth", "Sadar", "Sitabuldi", "Civil Lines"],
+    tier: 2,
+    tierLabel: "Tier 2 · Urban",
+  },
+  {
+    name: "Indore",
+    zones: ["Vijay Nagar", "Palasia", "Bhawarkuan", "AB Road"],
+    tier: 2,
+    tierLabel: "Tier 2 · Urban",
+  },
+  {
+    name: "Bhopal",
+    zones: ["MP Nagar", "Arera Colony", "New Market", "Habibganj"],
+    tier: 2,
+    tierLabel: "Tier 2 · Urban",
+  },
+  {
+    name: "Patna",
+    zones: ["Boring Road", "Kankarbagh", "Bailey Road", "Rajendra Nagar"],
+    tier: 2,
+    tierLabel: "Tier 2 · Urban",
+  },
+  {
+    name: "Chandigarh",
+    zones: ["Sector 17", "Sector 22", "Sector 35", "Industrial Area"],
+    tier: 2,
+    tierLabel: "Tier 2 · Urban",
+  },
+  {
+    name: "Coimbatore",
+    zones: ["RS Puram", "Gandhipuram", "Peelamedu", "Saravanampatti"],
+    tier: 2,
+    tierLabel: "Tier 2 · Urban",
+  },
+  {
+    name: "Kochi",
+    zones: ["Ernakulam", "Fort Kochi", "Edappally", "Kakkanad"],
+    tier: 2,
+    tierLabel: "Tier 2 · Urban",
+  },
+  {
+    name: "Visakhapatnam",
+    zones: ["MVP Colony", "Dwaraka Nagar", "Gajuwaka", "Seethammadhara"],
+    tier: 2,
+    tierLabel: "Tier 2 · Urban",
+  },
   // Tier 3 Emerging
   {
     name: "Other",

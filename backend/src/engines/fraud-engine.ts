@@ -394,6 +394,11 @@ export function detectFraudAdvanced(input: FraudInput): FraudResult {
     finalScore = Math.max(finalScore, 90);
   }
 
+  // Large GPS distance / spoofing requires manual admin review, so it cannot be auto-approved (score > 25)
+  if (flags.includes("GPS_GEOFENCE_BREACH") || flags.includes("GPS_SPOOF_SUSPECTED") || flags.includes("SPOOF_PROFILE_DETECTED")) {
+    finalScore = Math.max(finalScore, 50);
+  }
+
   const distanceKm = parseFloat((rawFeatures[0] ?? 0).toFixed(3));
 
   let decision: FraudResult["decision"];

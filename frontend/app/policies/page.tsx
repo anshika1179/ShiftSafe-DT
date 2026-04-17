@@ -432,6 +432,127 @@ export default function PoliciesPage() {
         </div>
       </div>
 
+      {/* ── Razorpay Pay Premium Button ── */}
+      {insuranceActive && (
+        <div className="glass-card p-4" style={{ background: "linear-gradient(135deg, rgba(59,130,246,0.04), rgba(147,51,234,0.04))" }}>
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl shrink-0"
+              style={{ background: "linear-gradient(135deg, #3b82f6, #8b5cf6)" }}>
+              💳
+            </div>
+            <div className="flex-1">
+              <div className="text-sm font-bold text-slate-900">Pay Weekly Premium</div>
+              <div className="text-[11px] text-gray-500">
+                Razorpay Secure Checkout · UPI / Card / Net Banking
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                setPolicyActionLoading(true);
+                try {
+                  // Step 1: Create Razorpay order via backend
+                  const res = await fetch("/api/razorpay/order", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      amount: weeklyPremium,
+                      workerId: worker?.id,
+                      policyId: policy?.id,
+                      description: `ShiftSafe Weekly Premium — ${worker?.name || "Worker"}`,
+                    }),
+                  });
+                  const data = await res.json();
+                  if (!data.success || !data.orderId) {
+                    triggerToast(data.error || "Unable to create payment order.", "error");
+                    setPolicyActionLoading(false);
+                    return;
+                  }
+
+                  // Step 2: Load Razorpay Checkout script if not already loaded
+                  if (!(window as any).Razorpay) {
+                    await new Promise<void>((resolve, reject) => {
+                      const script = document.createElement("script");
+                      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+                      script.onload = () => resolve();
+                      script.onerror = () => reject(new Error("Failed to load Razorpay SDK"));
+                      document.head.appendChild(script);
+                    });
+                  }
+
+                  // Step 3: Open Razorpay Checkout modal
+                  const options = {
+                    key: data.keyId,
+                    amount: data.amount * 100,
+                    currency: data.currency || "INR",
+                    name: "ShiftSafe Insurance",
+                    description: data.description || `Weekly Premium ₹${weeklyPremium}`,
+                    order_id: data.orderId,
+                    prefill: {
+                      name: worker?.name || "",
+                      contact: worker?.phone || "",
+                    },
+                    theme: {
+                      color: "#6d28d9",
+                    },
+                    handler: function (response: any) {
+                      // Payment successful!
+                      setPaymentHistory((prev) => [
+                        {
+                          id: response.razorpay_payment_id || createLocalPaymentId(),
+                          date: new Date().toLocaleDateString("en-IN", {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          }),
+                          amount: weeklyPremium,
+                          status: "Paid",
+                          receipt: `rzp-${response.razorpay_payment_id || "paid"}`,
+                        },
+                        ...prev,
+                      ]);
+                      triggerToast(
+                        `₹${weeklyPremium} premium paid successfully! Payment ID: ${response.razorpay_payment_id}`,
+                        "success"
+                      );
+                    },
+                    modal: {
+                      ondismiss: function () {
+                        triggerToast("Payment cancelled by user.", "error");
+                      },
+                    },
+                  };
+
+                  const rzp = new (window as any).Razorpay(options);
+                  rzp.on("payment.failed", function (response: any) {
+                    triggerToast(
+                      `Payment failed: ${response.error?.description || "Unknown error"}`,
+                      "error"
+                    );
+                  });
+                  rzp.open();
+                } catch (err) {
+                  triggerToast("Unable to process payment right now. Please try again.", "error");
+                } finally {
+                  setPolicyActionLoading(false);
+                }
+              }}
+              disabled={policyActionLoading}
+              className="px-5 py-2.5 rounded-xl text-sm font-bold text-white shadow-lg transition-all hover:shadow-xl hover:-translate-y-0.5 active:scale-95 disabled:opacity-50"
+              style={{ background: "linear-gradient(135deg, #3b82f6, #8b5cf6)" }}
+            >
+              {policyActionLoading ? "Processing..." : `Pay ₹${weeklyPremium}`}
+            </button>
+          </div>
+          <div className="mt-2.5 flex flex-wrap items-center gap-3 text-[9px] text-gray-400">
+            <span className="flex items-center gap-1">🔒 PCI-DSS Compliant</span>
+            <span>•</span>
+            <span>Test Card: 4111 1111 1111 1111</span>
+            <span>•</span>
+            <span>Test UPI: success@razorpay</span>
+          </div>
+        </div>
+      )}
+
       {/* pricing formula */}
       <div className="glass-card p-5">
         <div className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-1">

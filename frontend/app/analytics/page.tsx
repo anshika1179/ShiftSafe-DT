@@ -824,13 +824,13 @@ export default function AnalyticsPage() {
             </div>
           </div>
 
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="glass-card p-4">
               <div className="text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-3">
                 Premium Simulator Inputs
               </div>
               <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
                     <label className="text-[10px] uppercase tracking-wider font-bold text-slate-500">
                       City
