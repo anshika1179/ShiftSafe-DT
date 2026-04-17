@@ -82,7 +82,7 @@ export default function SplashPage() {
   }
 
   return (
-    <div className="fixed inset-0 z-100 bg-slate-900 text-white overflow-y-auto fade-in">
+    <div className="fixed inset-0 z-100 bg-slate-900 text-white overflow-y-auto fade-in always-dark">
       {/* Animated background */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] bg-primary-500/15 rounded-full blur-[120px] animate-float" />
