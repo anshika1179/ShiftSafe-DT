@@ -58,14 +58,9 @@ const FAQS = [
 
 export default function SplashPage() {
   const router = useRouter();
-  const { isLoggedIn, isBootstrapping } = useAppState();
+  const { isBootstrapping } = useAppState();
   const [activeFeature, setActiveFeature] = useState(0);
-
-  useEffect(() => {
-    if (!isBootstrapping && isLoggedIn) {
-      router.replace("/dashboard");
-    }
-  }, [isBootstrapping, isLoggedIn, router]);
+  const [showFaq, setShowFaq] = useState<number | null>(null);
 
   // auto-rotate features
   useEffect(() => {
@@ -162,19 +157,31 @@ export default function SplashPage() {
 
         {/* CTA Buttons */}
         <div className="space-y-3 mb-8">
-          <button
-            onClick={() => router.push("/register")}
-            className="w-full py-4 rounded-xl text-lg font-bold bg-primary-500 text-white shadow-[0_8px_24px_rgba(249,115,22,0.4)] hover:bg-primary-600 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group"
-          >
-            Get Protected Now
-            <span className="group-hover:translate-x-1 transition-transform">→</span>
-          </button>
-          <button
-            onClick={() => router.push("/login")}
-            className="w-full py-3.5 rounded-xl text-base font-bold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-          >
-            🔐 Login with OTP
-          </button>
+          {isLoggedIn ? (
+            <button
+              onClick={() => router.push("/dashboard")}
+              className="w-full py-4 rounded-xl text-lg font-bold bg-primary-500 text-white shadow-[0_8px_24px_rgba(249,115,22,0.4)] hover:bg-primary-600 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group"
+            >
+              Go to Dashboard
+              <span className="group-hover:translate-x-1 transition-transform">→</span>
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => router.push("/register")}
+                className="w-full py-4 rounded-xl text-lg font-bold bg-primary-500 text-white shadow-[0_8px_24px_rgba(249,115,22,0.4)] hover:bg-primary-600 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group"
+              >
+                Get Protected Now
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+              </button>
+              <button
+                onClick={() => router.push("/login")}
+                className="w-full py-3.5 rounded-xl text-base font-bold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+              >
+                🔐 Login with OTP
+              </button>
+            </>
+          )}
           <button
             onClick={() => router.push("/admin")}
             className="w-full py-3 rounded-xl text-sm font-bold text-slate-400 border border-slate-700/60 bg-slate-800/40 hover:bg-slate-800 hover:text-white hover:border-purple-500/40 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group"

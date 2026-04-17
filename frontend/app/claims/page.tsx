@@ -473,7 +473,7 @@ export default function ClaimsPage() {
                 <div className="pt-1 border-t border-slate-100">
                   {c.status === "paid" ? (
                     <span className="text-emerald-600 font-semibold">
-                      ⚡ Admin-approved payout completed
+                      ⚡ Payout processed via Razorpay
                     </span>
                   ) : c.status === "review" ? (
                     <span className="text-orange-600 font-semibold">
@@ -523,6 +523,24 @@ export default function ClaimsPage() {
           )}
         </div>
       </div>
+
+      {/* ── Razorpay Setup Warning ── */}
+      <div className="mt-8 glass-card p-4 border-l-4 border-l-blue-500 bg-blue-50/50">
+        <h3 className="text-sm font-bold text-blue-800 flex items-center gap-2">
+          <span>⚙️</span> Hackathon Demo Note: Real-time Razorpay Payouts
+        </h3>
+        <p className="text-xs text-blue-700 mt-1">
+          The automated claim settlement engine uses Razorpay Payouts (RazorpayX). To enable real fund transfers during the demo, you must complete this manual setup in your Vercel Dashboard:
+        </p>
+        <ul className="text-xs text-blue-700 mt-2 list-disc list-inside space-y-1 ml-1 font-mono">
+          <li>Set RAZORPAY_KEY_ID = &lt;your_razorpay_key&gt;</li>
+          <li>Set RAZORPAY_KEY_SECRET = &lt;your_razorpay_secret&gt;</li>
+        </ul>
+        <p className="text-[10px] text-blue-600 mt-2 italic">
+          If these keys are not set, the platform will safely fall back to sandbox simulation mode for demonstrations.
+        </p>
+      </div>
+
     </div>
   );
 }

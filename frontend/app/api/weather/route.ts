@@ -24,6 +24,25 @@ const CITY_COORDS: Record<string, { lat: number; lon: number }> = {
   lucknow: { lat: 26.8467, lon: 80.9462 },
   ahmedabad: { lat: 23.0225, lon: 72.5714 },
   kolkata: { lat: 22.5726, lon: 88.3639 },
+  // Extended city support
+  vadodara: { lat: 22.3072, lon: 73.1812 },
+  surat: { lat: 21.1702, lon: 72.8311 },
+  indore: { lat: 22.7196, lon: 75.8577 },
+  bhopal: { lat: 23.2599, lon: 77.4126 },
+  patna: { lat: 25.6093, lon: 85.1376 },
+  chandigarh: { lat: 30.7333, lon: 76.7794 },
+  nagpur: { lat: 21.1458, lon: 79.0882 },
+  coimbatore: { lat: 11.0168, lon: 76.9558 },
+  visakhapatnam: { lat: 17.6868, lon: 83.2185 },
+  kochi: { lat: 9.9312, lon: 76.2673 },
+  thiruvananthapuram: { lat: 8.5241, lon: 76.9366 },
+  mysuru: { lat: 12.2958, lon: 76.6394 },
+  guwahati: { lat: 26.1445, lon: 91.7362 },
+  ranchi: { lat: 23.3441, lon: 85.3096 },
+  rajkot: { lat: 22.3039, lon: 70.8022 },
+  gandhinagar: { lat: 23.2156, lon: 72.6369 },
+  nashik: { lat: 19.9975, lon: 73.7898 },
+  thane: { lat: 19.2183, lon: 72.9781 },
 };
 
 interface WeatherData {
@@ -156,6 +175,7 @@ export async function GET(req: NextRequest) {
   // Resolve coordinates
   let lat: number;
   let lon: number;
+  let resolvedCity = cityParam;
   if (latParam && lonParam) {
     lat = parseFloat(latParam);
     lon = parseFloat(lonParam);
@@ -164,10 +184,36 @@ export async function GET(req: NextRequest) {
       lat = fallback.lat;
       lon = fallback.lon;
     }
+  } else if (CITY_COORDS[cityParam]) {
+    lat = CITY_COORDS[cityParam].lat;
+    lon = CITY_COORDS[cityParam].lon;
   } else {
-    const coords = CITY_COORDS[cityParam] || CITY_COORDS.mumbai;
-    lat = coords.lat;
-    lon = coords.lon;
+    // City not in our lookup table — use OpenWeatherMap Geocoding API
+    let resolved = false;
+    if (OW_KEY) {
+      try {
+        const geoRes = await fetch(
+          `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(cityParam)},IN&limit=1&appid=${OW_KEY}`,
+          { next: { revalidate: 86400 } }, // cache 24h
+        );
+        if (geoRes.ok) {
+          const geoData = await geoRes.json();
+          if (Array.isArray(geoData) && geoData.length > 0) {
+            lat = geoData[0].lat;
+            lon = geoData[0].lon;
+            resolvedCity = (geoData[0].name || cityParam).toLowerCase();
+            resolved = true;
+          }
+        }
+      } catch {
+        // Fall through to default
+      }
+    }
+    if (!resolved) {
+      const fallback = CITY_COORDS.mumbai;
+      lat = fallback.lat;
+      lon = fallback.lon;
+    }
   }
 
   let weather: WeatherData;

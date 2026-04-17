@@ -371,7 +371,7 @@ export default function MonitoringPage() {
   const lostHours = 6;
   const calculatedClaim = Math.round(lostHours * avgIncomePerHour);
 
-  const handleClaim = async () => {
+  const handleClaim = async (trigger: TriggerAlert) => {
     if (!worker?.id) {
       triggerToast("Worker profile missing. Please login again.", "error");
       return;
@@ -380,7 +380,7 @@ export default function MonitoringPage() {
     setProcessing(true);
     triggerNotification({
       emoji: "🌍",
-      title: "Zone Disruption Claim — Fraud Screening",
+      title: `${trigger.title} — Fraud Screening`,
       subtitle: "Disruption mapped and queued for verification",
       value: "Risk + eligibility checks running",
       amount: calculatedClaim,
@@ -394,9 +394,9 @@ export default function MonitoringPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           workerId: worker.id,
-          simulate: true,
-          triggerType: liveData?.triggers?.[0]?.type || "curfew",
-          severity: liveData?.triggers?.[0]?.severity || "high",
+          simulate: false, // Actually submit the real live trigger details!
+          triggerType: trigger.type,
+          severity: trigger.severity,
           zone: worker.zone || "Andheri East",
           city: worker.city || "Mumbai",
           workerLocation: gpsState.coords,
@@ -406,7 +406,8 @@ export default function MonitoringPage() {
       });
 
       const payload = await res.json();
-      const claimData = (payload?.claim || {}) as {
+      const claimDataVal = payload?.claim || (payload?.claims && payload.claims[0]) || {};
+      const claimData = claimDataVal as {
         claimId?: string;
         amount?: number;
         status?: string;
@@ -431,10 +432,10 @@ export default function MonitoringPage() {
       if (status !== "blocked") {
         addClaim({
           id: claimData.claimId || createLocalClaimId(),
-          triggerType: liveData?.triggers?.[0]?.type || "curfew",
-          triggerEmoji: getTriggerEmoji(liveData?.triggers?.[0]?.type || "curfew"),
-          triggerName: "Local Map Disruption",
-          triggerValue: "Zone disruption validated with evidence",
+          triggerType: trigger.type,
+          triggerEmoji: trigger.emoji,
+          triggerName: trigger.title,
+          triggerValue: trigger.value,
           amount: settledAmount,
           status,
           fraudScore,
@@ -442,7 +443,7 @@ export default function MonitoringPage() {
           fraudColor: getFraudColor(fraudScore),
           payoutRef:
             claimData.settlement?.transactionRef ||
-            (status === "paid" ? "UPI-TXN-APPROVED" : "UNDER-REVIEW"),
+            (status === "paid" || status === "auto_approved" ? "RAZORPAY-PAYOUT-TXN" : "UNDER-REVIEW"),
           timestamp: new Date().toISOString(),
           relativeTime: "Just now",
           zone: worker.zone || "Andheri East",
@@ -623,9 +624,18 @@ export default function MonitoringPage() {
                 </div>
                 <div className="text-xs text-slate-600 mt-0.5">{trigger.value}</div>
                 {trigger.eligible && (
-                  <div className="text-[10px] text-emerald-600 font-semibold mt-1 flex items-center gap-1">
-                    <span className="w-3 h-3 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[8px]">✓</span>
-                    You are eligible to file a claim for this event
+                  <div className="mt-2 flex flex-col gap-2">
+                    <div className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                      <span className="w-3 h-3 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[8px]">✓</span>
+                      You are eligible to file a claim for this event
+                    </div>
+                    <button
+                      disabled={processing}
+                      onClick={() => handleClaim(trigger)}
+                      className="w-full text-xs font-bold bg-slate-900 text-white py-2 rounded-lg hover:bg-slate-800 transition shadow disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {processing ? "Processing via Razorpay..." : "⚡ Submit Claim Instantly"}
+                    </button>
                   </div>
                 )}
               </div>
