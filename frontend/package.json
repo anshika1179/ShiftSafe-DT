@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.0.2",
+    "@neondatabase/serverless": "^1.1.0",
     "@shiftsafe/backend": "*",
     "@tailwindcss/postcss": "^4.2.2",
     "@types/node": "^25.5.0",
