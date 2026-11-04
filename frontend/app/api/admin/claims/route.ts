@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/backend/models/db";
-import { processSettlement } from "@/backend/engines/settlement-engine";
 import {
   ADMIN_SESSION_COOKIE,
   verifyAdminSessionToken,
@@ -50,36 +49,6 @@ interface ClaimDetailsRow {
   upi_id: string | null;
   bank_account: string | null;
   ifsc_code: string | null;
-}
-
-function mapSettlementToClaimState(status: string): {
-  claimStatus: "paid" | "review";
-  settlementStatus: string;
-  processedAtSql: "datetime('now')" | "NULL";
-} {
-  const normalized = String(status || "").toLowerCase();
-
-  if (normalized === "completed") {
-    return {
-      claimStatus: "paid",
-      settlementStatus: "completed",
-      processedAtSql: "datetime('now')",
-    };
-  }
-
-  if (normalized === "processing") {
-    return {
-      claimStatus: "review",
-      settlementStatus: "processing",
-      processedAtSql: "NULL",
-    };
-  }
-
-  return {
-    claimStatus: "review",
-    settlementStatus: normalized || "failed",
-    processedAtSql: "NULL",
-  };
 }
 
 interface CountRow {
@@ -137,18 +106,15 @@ function normalizeStatusFilter(raw: string | null): ClaimStatus {
 
 function normalizeQueueStatus(status: string): "review" | "paid" | "blocked" {
   const normalized = String(status || "").toLowerCase();
-  if (normalized === "paid" || normalized === "auto_approved") return "paid";
+  if (normalized === "paid") return "paid";
   if (normalized === "blocked") return "blocked";
   return "review";
 }
 
 function mapQueueClaim(row: QueueClaimRow) {
   const evidence = parseEvidenceData(row.evidence_data);
-  const fraudScore = Number(evidence.fraudScore || 0);
-  const fraudLabel = String(
-    evidence.fraudLabel ||
-      (fraudScore > 0 ? `${fraudScore}/100` : "Not scored"),
-  );
+  const fraudScore = null;
+  const fraudLabel = "No validated fraud assessment; legacy evidence preserved";
   const reviewPriority =
     String(evidence.reviewPriority || "normal").toLowerCase() === "high"
       ? "high"
@@ -159,7 +125,7 @@ function mapQueueClaim(row: QueueClaimRow) {
     id: row.id,
     workerId: row.worker_id,
     workerName: row.worker_name,
-    workerPhone: row.worker_phone,
+    workerPhone: row.worker_phone || "",
     platform: row.platform,
     city: row.city,
     zone: row.zone || "Unknown",
@@ -194,7 +160,7 @@ export async function GET(req: NextRequest) {
   let whereClause = "";
   const params: string[] = [];
   if (statusFilter === "paid") {
-    whereClause = "WHERE c.status IN ('paid', 'auto_approved')";
+    whereClause = "WHERE c.status = 'paid'";
   } else if (statusFilter !== "all") {
     whereClause = "WHERE c.status = ?";
     params.push(statusFilter);
@@ -375,104 +341,7 @@ export async function PATCH(req: NextRequest) {
       });
     }
 
-    const maxPayoutCap = Math.round(Number(claim.worker_income || 0) * 0.5);
-    const preferredPayoutMethod = String(claim.payout_method || "upi")
-      .trim()
-      .toLowerCase();
-    const workerUpiId = String(claim.upi_id || "")
-      .trim()
-      .toLowerCase();
-    const workerBankAccount = String(claim.bank_account || "").trim();
-    const upiFromPhone = `${claim.worker_phone}@upi`;
-
-    const payoutViaBank = preferredPayoutMethod === "bank";
-    const preferredUpi = workerUpiId.includes("@") ? workerUpiId : upiFromPhone;
-    const settlementUpiId = payoutViaBank ? undefined : preferredUpi;
-    const settlementBankAccount = workerBankAccount || undefined;
-
-    const settlement = processSettlement({
-      claimId: claim.id,
-      workerId: claim.worker_id,
-      amount: Number(claim.amount || 0),
-      upiId: settlementUpiId,
-      bankAccount: settlementBankAccount,
-      maxPayoutCap,
-    });
-
-    const claimState = mapSettlementToClaimState(settlement.status);
-    const claimPayoutChannel =
-      claimState.claimStatus === "paid" ? settlement.channel : "manual_review";
-    const claimPayoutMethod =
-      claimState.claimStatus === "paid" ? settlement.channel : "manual_review";
-    const statusMessage =
-      claimState.claimStatus === "paid"
-        ? `Claim approved and payout settled via ${settlement.channel}`
-        : `Claim approved for payout review: ${settlement.failureReason || "settlement requires manual follow-up"}`;
-
-    const evidenceData = withAdminReviewMetadata(
-      claim.evidence_data,
-      "approve",
-      note,
-    );
-
-    await db
-      .prepare(
-        `UPDATE claims
-         SET amount = ?,
-             status = ?,
-             payout_method = ?,
-             payout_channel = ?,
-             settlement_status = ?,
-             evidence_data = ?,
-             processed_at = ${claimState.processedAtSql}
-         WHERE id = ?`,
-      )
-      .run(
-        settlement.cappedAmount,
-        claimState.claimStatus,
-        claimPayoutMethod,
-        claimPayoutChannel,
-        claimState.settlementStatus,
-        evidenceData,
-        claimId,
-      );
-
-    await db
-      .prepare(
-        `INSERT INTO settlements (id, claim_id, worker_id, amount, channel, fallback_channel, upi_id, bank_account, status, completed_at, failure_reason, transaction_ref)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${settlement.status === "completed" ? "datetime('now')" : "NULL"}, ?, ?)`,
-      )
-      .run(
-        settlement.settlementId,
-        claimId,
-        claim.worker_id,
-        settlement.cappedAmount,
-        settlement.channel,
-        settlement.fallbackChannel,
-        settlementUpiId || null,
-        settlementBankAccount || null,
-        settlement.status,
-        settlement.failureReason,
-        settlement.transactionRef,
-      );
-
-    return NextResponse.json({
-      success: true,
-      claimId,
-      status: claimState.claimStatus,
-      message: statusMessage,
-      settlement: {
-        id: settlement.settlementId,
-        channel: settlement.channel,
-        fallbackChannel: settlement.fallbackChannel,
-        amount: settlement.cappedAmount,
-        estimatedTime: settlement.estimatedTime,
-        transactionRef: settlement.transactionRef,
-        status: settlement.status,
-        failureReason: settlement.failureReason,
-        attemptedChannels: settlement.attemptedChannels,
-      },
-    });
+    return NextResponse.json({ error: "Payout approval is disabled until verified settlement and idempotency are configured. No settlement was created." }, { status: 503 });
   } catch {
     return NextResponse.json(
       { error: "Invalid request body" },

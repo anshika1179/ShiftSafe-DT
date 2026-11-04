@@ -28,8 +28,8 @@ export async function GET(req: NextRequest) {
          p.id as policy_id, p.plan_name, p.premium_tier, p.weekly_premium,
          p.max_coverage_per_week, p.status as policy_status,
          (SELECT COUNT(*) FROM claims c WHERE c.worker_id = w.id) as total_claims,
-         (SELECT COUNT(*) FROM claims c WHERE c.worker_id = w.id AND c.status IN ('auto_approved','paid')) as approved_claims,
-         (SELECT COALESCE(SUM(c.amount), 0) FROM claims c WHERE c.worker_id = w.id AND c.status IN ('auto_approved','paid')) as total_payouts,
+         (SELECT COUNT(*) FROM claims c WHERE c.worker_id = w.id AND c.status = 'paid') as paid_status_claim_records,
+         (SELECT COALESCE(SUM(c.amount), 0) FROM claims c WHERE c.worker_id = w.id AND c.status = 'paid') as amount_marked_paid,
          (SELECT COALESCE(SUM(rb.amount), 0) FROM risk_bonuses rb WHERE rb.worker_id = w.id AND rb.status = 'paid') as total_bonuses
        FROM workers w
        LEFT JOIN policies p ON p.worker_id = w.id AND p.status = 'active'

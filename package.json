@@ -10,6 +10,17 @@
     "build": "npm run build -w @shiftsafe/frontend",
     "start": "npm run start -w @shiftsafe/frontend",
     "typecheck": "npm run typecheck -w @shiftsafe/frontend",
-    "lint": "npm run lint -w @shiftsafe/frontend"
+    "lint": "npm run lint -w @shiftsafe/frontend",
+    "test": "tsx --tsconfig frontend/tsconfig.json --test tests/*.test.ts",
+    "security:check": "node scripts/check-audit.mjs"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "1.14.5"
+  },
+  "engines": {
+    "node": "22.x"
   }
 }

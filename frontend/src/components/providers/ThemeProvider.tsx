@@ -4,7 +4,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
-  useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 
@@ -31,77 +31,37 @@ export function useTheme(): ThemeContextType {
   return ctx;
 }
 
-function getSystemTheme(): "light" | "dark" {
-  if (typeof window === "undefined") return "light";
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
+let selectedTheme: ThemeMode | null = null;
+const listeners = new Set<() => void>();
+function readTheme(): ThemeMode {
+  if (selectedTheme) return selectedTheme;
+  const saved = localStorage.getItem("shiftsafe-theme");
+  return saved === "light" || saved === "dark" || saved === "system" ? saved : "system";
 }
-
+function subscribe(onChange: () => void) {
+  listeners.add(onChange);
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  mq.addEventListener("change", onChange);
+  window.addEventListener("storage", onChange);
+  return () => { listeners.delete(onChange); mq.removeEventListener("change", onChange); window.removeEventListener("storage", onChange); };
+}
+function readResolved(): "light" | "dark" {
+  const theme = readTheme();
+  return theme === "system" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : theme;
+}
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<ThemeMode>("system");
-  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
-  const [mounted, setMounted] = useState(false);
-
-  // On mount, read saved theme from localStorage
+  const theme = useSyncExternalStore(subscribe, readTheme, () => "system" as ThemeMode);
+  const resolvedTheme = useSyncExternalStore(subscribe, readResolved, () => "light" as const);
   useEffect(() => {
-    const saved = localStorage.getItem("shiftsafe-theme") as ThemeMode | null;
-    if (saved && ["light", "dark", "system"].includes(saved)) {
-      setThemeState(saved);
-    }
-    setMounted(true);
-  }, []);
-
-  // Resolve the active theme and apply the class to <html>
-  useEffect(() => {
-    if (!mounted) return;
-
-    const resolved = theme === "system" ? getSystemTheme() : theme;
-    setResolvedTheme(resolved);
-
     const root = document.documentElement;
     root.classList.remove("light", "dark");
-    root.classList.add(resolved);
-
-    // Update meta theme-color for PWA
-    const metaTheme = document.querySelector('meta[name="theme-color"]');
-    if (metaTheme) {
-      metaTheme.setAttribute(
-        "content",
-        resolved === "dark" ? "#0f172a" : "#f97316",
-      );
-    }
-  }, [theme, mounted]);
-
-  // Listen for system theme changes when in "system" mode
-  useEffect(() => {
-    if (!mounted || theme !== "system") return;
-
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = (e: MediaQueryListEvent) => {
-      setResolvedTheme(e.matches ? "dark" : "light");
-      const root = document.documentElement;
-      root.classList.remove("light", "dark");
-      root.classList.add(e.matches ? "dark" : "light");
-    };
-
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, [theme, mounted]);
-
-  const setTheme = useCallback((t: ThemeMode) => {
-    setThemeState(t);
-    localStorage.setItem("shiftsafe-theme", t);
+    root.classList.add(resolvedTheme);
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", resolvedTheme === "dark" ? "#0f172a" : "#f97316");
+  }, [resolvedTheme]);
+  const setTheme = useCallback((value: ThemeMode) => {
+    selectedTheme = value;
+    localStorage.setItem("shiftsafe-theme", value);
+    listeners.forEach((notify) => notify());
   }, []);
-
-  // Prevent flash of incorrect theme
-  if (!mounted) {
-    return <>{children}</>;
-  }
-
-  return (
-    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>
-      {children}
-    </ThemeContext.Provider>
-  );
+  return <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>{children}</ThemeContext.Provider>;
 }

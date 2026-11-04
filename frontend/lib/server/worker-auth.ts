@@ -11,6 +11,7 @@ export const WORKER_SESSION_COOKIE = "shiftsafe_worker_session";
 export interface WorkerSessionPayload {
   workerId: string;
   phone: string;
+  googleSubject?: string;
   expiresAt: number;
   nonce: string;
 }
@@ -35,12 +36,14 @@ export function createWorkerSessionToken(
   workerId: string,
   phone: string,
   expiresInSeconds: number = 7 * 24 * 60 * 60,
+  googleSubject?: string,
 ): string {
   const expiresAt = Date.now() + expiresInSeconds * 1000;
   const nonce = randomBytes(16).toString("hex");
   const payloadJson = JSON.stringify({
     workerId,
     phone,
+    googleSubject,
     expiresAt,
     nonce,
   });
@@ -71,10 +74,11 @@ export function parseWorkerSessionToken(
     const expiresAt = Number(session.expiresAt);
     const nonce = String(session.nonce || "").trim();
 
-    if (!workerId || !nonce || phone.length !== 10) return null;
+    const googleSubject = typeof session.googleSubject === "string" ? session.googleSubject : undefined;
+    if (!workerId || !nonce || (!googleSubject && phone.length !== 10)) return null;
     if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) return null;
 
-    return { workerId, phone, expiresAt, nonce };
+    return { workerId, phone, googleSubject, expiresAt, nonce };
   } catch {
     return null;
   }

@@ -8,6 +8,8 @@ export interface WorkerProfile {
   id: string;
   name: string;
   phone: string;
+  phoneVerified?: boolean;
+  authProvider?: string;
   platform: string;
   city?: string;
   zone: string;
@@ -22,7 +24,7 @@ export interface PolicyData {
   coverageAmount: number;
   riskScore: number;
   riskLabel: string;
-  status: 'active' | 'expired' | 'cancelled';
+  status: 'active' | 'pending' | 'expired' | 'cancelled';
   startDate: string;
   nextPaymentDue: string;
   totalPremiumPaid: number;

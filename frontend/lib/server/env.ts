@@ -1,76 +1,35 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
+import { isScryptPasswordHash } from "./admin-password";
 
 export const isProduction = process.env.NODE_ENV === "production";
 
-const devEntropy = randomBytes(24).toString("hex");
-
-function sha256(input: string): string {
-  return createHash("sha256").update(input).digest("hex");
+function required(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} is not configured`);
+  return value;
 }
 
-function requireInProduction(name: string): string {
-  const value = process.env[name];
-  if (value && value.trim()) return value.trim();
-
-  if (isProduction) {
-    throw new Error(`${name} is required in production`);
+function secret(name: string): string {
+  const value = required(name);
+  if (value.length < 32 || /replace_with|your_secret|shiftsafe-demo/i.test(value)) {
+    throw new Error(`${name} must be a unique secret of at least 32 characters`);
   }
-
-  return "";
+  return value;
 }
 
-export function getCronSecret(): string {
-  const configured = process.env.CRON_SECRET?.trim();
-  if (configured) return configured;
-
-  // Demo fallback — CRON endpoint accessible for hackathon testing
-  return "shiftsafe-demo-cron-secret-2026";
-}
-
-export function getAdminEmail(): string {
-  const configured = process.env.ADMIN_EMAIL?.trim();
-  if (configured) return configured.toLowerCase();
-
-  // Demo fallback — admin panel always accessible for hackathon judges
-  return "admin@shiftsafe.in";
-}
-
+export function getCronSecret(): string { return secret("CRON_SECRET"); }
+export function getAdminEmail(): string { return required("ADMIN_EMAIL").toLowerCase(); }
 export function getAdminPasswordHash(): string {
-  const configured = process.env.ADMIN_PASSWORD_HASH?.trim();
-  if (configured) return configured;
-
-  const devPassword = process.env.ADMIN_DEV_PASSWORD || "shiftsafe2026";
-  return sha256(devPassword);
-}
-
-export function getAdminSessionSecret(): string {
-  const configured = process.env.ADMIN_SESSION_SECRET?.trim();
-  if (configured) return configured;
-
-  // Demo fallback — deterministic secret for hackathon (not random per deploy)
-  return "shiftsafe-demo-admin-session-secret-2026";
-}
-
-export function getWorkerSessionSecret(): string {
-  const configured = process.env.WORKER_SESSION_SECRET?.trim();
-  if (configured) return configured;
-
-  const legacySharedSecret = process.env.ADMIN_SESSION_SECRET?.trim();
-  if (legacySharedSecret) return legacySharedSecret;
-
-  // As a safety net, derive a deterministic secret from existing protected envs
-  // so worker onboarding doesn't hard-fail when WORKER_SESSION_SECRET is missing.
-  const derivedSource =
-    process.env.ADMIN_PASSWORD_HASH?.trim() || process.env.CRON_SECRET?.trim();
-  if (derivedSource) {
-    return `derived-worker-session-${sha256(derivedSource).slice(0, 48)}`;
+  const hash = process.env.ADMIN_PASSWORD_HASH?.trim();
+  if (hash) {
+    if (isScryptPasswordHash(hash)) return hash;
+    if (/^[a-f0-9]{64}$/i.test(hash)) return hash.toLowerCase();
+    throw new Error("ADMIN_PASSWORD_HASH has an invalid format");
   }
-
-  if (isProduction) {
-    console.warn(
-      "WORKER_SESSION_SECRET is missing in production; falling back to process-local emergency secret",
-    );
+  if (!isProduction && process.env.ADMIN_DEV_PASSWORD?.trim()) {
+    return createHash("sha256").update(process.env.ADMIN_DEV_PASSWORD).digest("hex");
   }
-
-  return `dev-worker-session-${devEntropy}`;
+  throw new Error("ADMIN_PASSWORD_HASH is not configured");
 }
+export function getAdminSessionSecret(): string { return secret("ADMIN_SESSION_SECRET"); }
+export function getWorkerSessionSecret(): string { return secret("WORKER_SESSION_SECRET"); }

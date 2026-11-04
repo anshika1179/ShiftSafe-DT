@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { getDb } from "@/backend/models/db";
 import { NextRequest, NextResponse } from "next/server";
 import {
   isValidIndianPhoneNumber,
@@ -51,7 +53,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return NextResponse.json({ success: true });
+    const proof = randomUUID();
+    await getDb().prepare("INSERT INTO registration_proofs (id, phone, expires_at) VALUES (?, ?, ?)").run(proof, phone, Date.now() + 10 * 60 * 1000);
+    return NextResponse.json({ success: true, registrationProof: proof, mode: "local_test" });
   } catch {
     return NextResponse.json(
       { error: "Invalid request body" },

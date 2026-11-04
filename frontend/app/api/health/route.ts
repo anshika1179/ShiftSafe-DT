@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { getDb, getDbProvider } from "@/backend/models/db";
-import { runMlSelfTest } from "@/backend/engines/ml-health-engine";
+
 
 const isProduction = process.env.NODE_ENV === "production";
 
 export async function GET() {
   const startedAt = Date.now();
-  const mlSelfTest = runMlSelfTest();
+
 
   try {
     const db = getDb();
@@ -19,11 +19,7 @@ export async function GET() {
       uptimeSeconds: Math.round(process.uptime()),
       timestamp: new Date().toISOString(),
       latencyMs: Date.now() - startedAt,
-      ml: {
-        status: mlSelfTest.status,
-        passRate: mlSelfTest.passRate,
-        failedChecks: mlSelfTest.failedChecks,
-      },
+      ml: {status:"unavailable",trainedModel:false,accuracy:null,reason:"No documented training dataset or holdout evaluation"},
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -35,11 +31,7 @@ export async function GET() {
         uptimeSeconds: Math.round(process.uptime()),
         timestamp: new Date().toISOString(),
         latencyMs: Date.now() - startedAt,
-        ml: {
-          status: mlSelfTest.status,
-          passRate: mlSelfTest.passRate,
-          failedChecks: mlSelfTest.failedChecks,
-        },
+        ml: {status:"unavailable",trainedModel:false,accuracy:null,reason:"No documented training dataset or holdout evaluation"},
         ...(isProduction
           ? {}
           : {

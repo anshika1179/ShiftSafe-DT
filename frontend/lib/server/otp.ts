@@ -35,10 +35,10 @@ export function normalizeOtp(otp: unknown): string {
 
 export function verifyOtpCode(otp: string): OtpVerificationResult {
   const configuredOtp = process.env.OTP_DEMO_CODE;
-  const fallbackOtp = "123456"; // Always allow 123456 as a fallback for the hackathon
-  const expectedOtp = (configuredOtp && configuredOtp.trim()) || fallbackOtp;
+  const expectedOtp = !isProduction && process.env.OTP_MODE === "local_test"
+    ? configuredOtp?.trim() : undefined;
 
-  if (!expectedOtp) {
+  if (!expectedOtp || !/^\d{6}$/.test(expectedOtp)) {
     return {
       valid: false,
       status: 503,

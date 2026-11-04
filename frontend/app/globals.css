@@ -607,3 +607,11 @@ html.dark .glass-card:hover {
 
 
 
+
+/* Explicit colors keep the no-cover state readable despite legacy dark tokens. */
+html.dark .coverage-state-card {
+  background: #172337 !important;
+  border-color: #465469 !important;
+}
+html.dark .coverage-state-card p { color: #d9e2ef !important; }
+html.dark .coverage-state-card h2 { color: #ffc36e !important; }
