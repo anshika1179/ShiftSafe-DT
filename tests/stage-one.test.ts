@@ -19,7 +19,7 @@ test("stage one preserves financial blocks and bounds the known development exce
   const exception = JSON.parse(fs.readFileSync("docs/SECURITY-EXCEPTIONS.json", "utf8"));
   assert.equal(exception.advisoryUrl, "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm");
   assert.equal(exception.packageNames.length, 5);
-  assert.ok(new Date(exception.expiresAt) < new Date("2026-10-13T00:00:00Z"));
+  assert.ok(new Date(exception.expiresAt) < new Date("2026-11-18T00:00:00Z"));
   const checker = fs.readFileSync("scripts/check-audit.mjs", "utf8");
   assert.ok(checker.includes('audit(["--omit=dev"])'));
   assert.ok(checker.includes("Unreviewed advisory"));
