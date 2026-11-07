@@ -24,6 +24,7 @@ interface WorkerRow {
   risk_score: number;
   payout_method: string | null;
   upi_id: string | null;
+  is_active: number;
 }
 
 interface PolicyRow {
@@ -65,7 +66,7 @@ function shouldUseSecureCookie(req: NextRequest): boolean {
 
 function normalizeClaimStatus(status: string): ClaimData["status"] {
   const normalized = status.toLowerCase();
-  if (normalized === "paid" || normalized === "auto_approved") return "paid";
+  if (normalized === "paid") return "paid";
   if (normalized === "review") return "review";
   if (normalized === "blocked") return "blocked";
   return "pending";
@@ -76,13 +77,6 @@ function getFraudColor(score: number): string {
   if (score <= 44) return "#4d9fff";
   if (score <= 69) return "#ff6b35";
   return "#ff3b5c";
-}
-
-function getRiskLabel(score: number): string {
-  if (score <= 25) return "Low";
-  if (score <= 50) return "Moderate";
-  if (score <= 75) return "High";
-  return "Critical";
 }
 
 function getRelativeTime(timestamp: string): string {
@@ -98,28 +92,11 @@ function getRelativeTime(timestamp: string): string {
   return `${days}d ago`;
 }
 
-function getContributionByTier(tier: string): PolicyData["contributions"] {
-  const normalized = String(tier || "").toLowerCase();
-  if (normalized === "premium") {
-    return { weather: 32, zone: 26, platform: 22, claims: 20 };
-  }
-  if (normalized === "low") {
-    return { weather: 20, zone: 18, platform: 35, claims: 27 };
-  }
-  return { weather: 28, zone: 24, platform: 24, claims: 24 };
-}
-
 function parseFraudInfo(
   row: ClaimRow,
-  status: ClaimData["status"],
 ): { score: number; label: string } {
-  let score = status === "blocked" ? 80 : status === "review" ? 55 : 18;
-  let label =
-    status === "blocked"
-      ? "80/100 Blocked"
-      : status === "review"
-        ? "55/100 Review"
-        : "18/100 Clean";
+  let score = 0;
+  let label = "Fraud assessment unavailable";
 
   if (!row.evidence_data) {
     return { score, label };
@@ -146,7 +123,7 @@ function mapWorkerToProfile(worker: WorkerRow): WorkerProfile {
   const avgWeeklyEarnings = Number(worker.avg_weekly_income || 0);
   const hoursPerDay = worker.shift_type === "part_time" ? 5 : 8;
   const persistedUpiId = String(worker.upi_id || "").trim();
-  const effectiveUpiId = persistedUpiId || `${worker.phone}@upi`;
+  const effectiveUpiId = persistedUpiId;
 
   return {
     id: worker.id,
@@ -165,10 +142,11 @@ function mapPolicy(
   worker: WorkerRow,
   policy: PolicyRow | undefined,
   now: Date,
-): PolicyData {
+): PolicyData | null {
+  if (!policy) return null;
   const weeklyPremium = Number(policy?.weekly_premium || 0);
   const coverageAmount = Number(policy?.max_coverage_per_week || 0);
-  const normalizedRisk = Number(worker.risk_score || 0.35);
+  const normalizedRisk = Number(worker.risk_score || 0);
   const riskScore =
     normalizedRisk <= 1 ? Math.round(normalizedRisk * 100) : normalizedRisk;
 
@@ -183,28 +161,28 @@ function mapPolicy(
   const nextPaymentDate = new Date(startDate);
   nextPaymentDate.setDate(nextPaymentDate.getDate() + weeksActive * 7);
 
-  const status = String(policy?.status || "active").toLowerCase();
+  const status = String(policy.status).toLowerCase();
   const normalizedStatus: PolicyData["status"] =
-    status === "cancelled" || status === "expired" ? status : "active";
+    status === "cancelled" || status === "expired" || status === "active" ? status : "pending";
 
   return {
-    id: policy?.id || `POL-${worker.id.slice(0, 8)}`,
+    id: policy.id,
     weeklyPremium,
     coverageAmount,
     riskScore,
-    riskLabel: getRiskLabel(riskScore),
+    riskLabel: "Legacy stored score, unvalidated",
     status: normalizedStatus,
     startDate,
     nextPaymentDue: nextPaymentDate.toISOString().split("T")[0],
-    totalPremiumPaid: Math.round(weeklyPremium * weeksActive),
-    contributions: getContributionByTier(policy?.premium_tier || "standard"),
+    totalPremiumPaid: 0,
+    contributions: {weather:0,zone:0,platform:0,claims:0},
   };
 }
 
 function mapClaims(rows: ClaimRow[]): ClaimData[] {
   return rows.map((row) => {
     const status = normalizeClaimStatus(row.status);
-    const fraud = parseFraudInfo(row, status);
+    const fraud = parseFraudInfo(row);
 
     return {
       id: row.id,
@@ -222,7 +200,7 @@ function mapClaims(rows: ClaimRow[]): ClaimData[] {
       payoutRef:
         row.transaction_ref ||
         (status === "paid"
-          ? "UPI-TXN-APPROVED"
+          ? "Reference unavailable"
           : status === "blocked"
             ? "BLOCKED"
             : "UNDER-REVIEW"),
@@ -244,13 +222,20 @@ export async function GET(req: NextRequest) {
   const db = getDb();
   const worker = (await db
     .prepare(
-      "SELECT id, name, phone, platform, city, zone, avg_weekly_income, shift_type, risk_score, payout_method, upi_id FROM workers WHERE id = ? LIMIT 1",
+      "SELECT id, name, phone, platform, city, zone, avg_weekly_income, shift_type, risk_score, payout_method, upi_id, is_active FROM workers WHERE id = ? LIMIT 1",
     )
     .get(session.workerId)) as WorkerRow | undefined;
 
-  if (!worker) {
+  if (!worker || !worker.is_active || (!session.googleSubject && worker.phone !== session.phone)) {
     return NextResponse.json({ authenticated: false });
   }
+
+  if (session.googleSubject) {
+    const identity = await db.prepare("SELECT subject FROM worker_identities WHERE worker_id = ? AND provider = ?").get(worker.id, "google");
+    if (identity?.subject !== session.googleSubject) return NextResponse.json({ authenticated: false });
+  }
+  const contact = await db.prepare("SELECT phone, phone_verified FROM worker_contacts WHERE worker_id = ?").get(worker.id);
+  const profilePhone = contact?.phone || worker.phone || "";
 
   const policy = (await db
     .prepare(
@@ -270,8 +255,12 @@ export async function GET(req: NextRequest) {
     .all(worker.id)) as ClaimRow[];
 
   const now = new Date();
-  const workerProfile = mapWorkerToProfile(worker);
+  const workerProfile = { ...mapWorkerToProfile(worker), phone: profilePhone, phoneVerified: contact?.phone_verified === 1, authProvider: session.googleSubject ? "google" : "local_test" };
   const policyData = mapPolicy(worker, policy, now);
+  if (policyData) {
+    const payments = await db.prepare("SELECT COALESCE(SUM(amount), 0) AS total FROM premium_payments WHERE worker_id = ? AND policy_id = ? AND status = 'paid'").get(worker.id, policy!.id);
+    policyData.totalPremiumPaid = Number(payments?.total || 0);
+  }
   const claims = mapClaims(claimRows);
   const totalEarningsProtected = claims
     .filter((claim) => claim.status === "paid")

@@ -15,6 +15,13 @@ const nextConfig = {
         ],
       },
       {
+        source: '/auth/email',
+        headers: [
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'Cache-Control', value: 'no-store, max-age=0' },
+        ],
+      },
+      {
         source: '/api/(.*)',
         headers: [
           { key: 'Cache-Control', value: 'no-store, max-age=0' },

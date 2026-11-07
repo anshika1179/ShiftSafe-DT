@@ -1,36 +1,35 @@
 "use client";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
 import { useAppState } from "@/frontend/components/providers/AppProvider";
+import { safeReplace } from "@/lib/client/navigation";
 import { useTheme } from "@/frontend/components/providers/ThemeProvider";
 
 export function BottomNav() {
   const pathname = usePathname();
 
-  if (pathname === "/" || pathname === "/register" || pathname === "/login") {
+  if (pathname === "/" || pathname === "/register" || pathname === "/login" || pathname === "/admin") {
     return null;
   }
 
   const links = [
     { href: "/dashboard", icon: "📊", label: "Home" },
-    { href: "/monitoring", icon: "🗺️", label: "Live" },
-    { href: "/policies", icon: "🛡️", label: "Policy" },
-    { href: "/claims", icon: "⚡", label: "Claims" },
+    { href: "/journey", icon: "👤", label: "Profile" },
+    { href: "/sandbox", icon: "🧪", label: "Sandbox" },
+    { href: "/monitoring", icon: "🗺️", label: "Weather" },
     { href: "/service-requests", icon: "📝", label: "Support" },
-    { href: "/actuarial", icon: "🧮", label: "Actuarial" },
-    { href: "/analytics", icon: "📈", label: "Analytics" },
   ];
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/80 backdrop-blur-xl border-t border-slate-200/60 pb-[env(safe-area-inset-bottom,16px)]">
-      <div className="max-w-120 mx-auto flex items-center justify-around px-2 py-3">
+      <div className="max-w-120 md:max-w-4xl mx-auto flex items-center justify-around gap-1 overflow-x-auto px-2 py-3">
         {links.map((l) => {
           const active = pathname === l.href;
           return (
             <a
               key={l.href}
               href={l.href}
-              className={`flex flex-col items-center gap-1 transition-all min-w-14 min-h-11 justify-center ${
+              className={`flex flex-col items-center gap-1 transition-all shrink-0 min-w-14 min-h-11 justify-center ${
                 active
                   ? "text-primary-500 scale-105"
                   : "text-gray-400 hover:text-gray-600"
@@ -55,6 +54,7 @@ export function BottomNav() {
 }
 
 export function TopBar() {
+  const router = useRouter();
   const pathname = usePathname();
   const { worker, policy, signOut } = useAppState();
   const { theme, resolvedTheme, setTheme } = useTheme();
@@ -85,7 +85,7 @@ export function TopBar() {
   }, [profileOpen, themeOpen]);
 
   // hide on splash / register
-  if (pathname === "/" || pathname === "/register" || pathname === "/login") {
+  if (pathname === "/" || pathname === "/register" || pathname === "/login" || pathname === "/admin") {
     return null;
   }
 
@@ -102,7 +102,7 @@ export function TopBar() {
     setProfileOpen(false);
     await signOut();
     if (typeof window !== "undefined") {
-      window.location.assign("/");
+      safeReplace(router, "/");
     }
   };
 
@@ -128,7 +128,7 @@ export function TopBar() {
             🛡️
           </div>
           <span className="text-xl font-extrabold text-slate-800 tracking-tight">
-            ShiftSafe<span className="text-primary-500 font-medium">DT</span>
+            ShiftSafe
           </span>
         </a>
 
@@ -136,7 +136,7 @@ export function TopBar() {
           <div className="hidden sm:flex sm:items-center sm:gap-2 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-500/20 shadow-sm">
             <span className="live-dot" />
             <span className="text-[10px] text-emerald-600 font-extrabold tracking-widest uppercase">
-              Live
+              Prototype
             </span>
           </div>
 
@@ -197,13 +197,6 @@ export function TopBar() {
             )}
           </div>
 
-          <a
-            href="/admin"
-            className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-lg shadow-sm border border-slate-200 transition-all hover:scale-105 active:scale-95"
-            aria-label="Admin Dashboard"
-          >
-            ⚙️
-          </a>
 
           {/* Profile Avatar */}
           <div className="relative" ref={dropdownRef}>
@@ -224,6 +217,7 @@ export function TopBar() {
             {/* Dropdown */}
             {profileOpen && (
               <div className="absolute right-0 top-12 w-64 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden fade-in z-50">
+                <a href="/journey" className="block px-4 py-3 text-sm font-semibold text-primary-600 border-b">Saved profile and journey →</a>
                 {/* Header */}
                 <div
                   className="px-4 pt-4 pb-3 border-b border-slate-100"
@@ -246,7 +240,7 @@ export function TopBar() {
                         {worker?.name || "Worker"}
                       </div>
                       <div className="text-[11px] text-gray-500">
-                        +91-{worker?.phone || "—"}
+                        +91-{worker?.phone || "-"} {worker?.phoneVerified === true ? "(contact verified)" : "(unverified)"}
                       </div>
                     </div>
                   </div>
@@ -265,11 +259,6 @@ export function TopBar() {
                       icon: "💰",
                       label: "Weekly Earnings",
                       value: `₹${worker?.avgWeeklyEarnings?.toLocaleString() || "—"}`,
-                    },
-                    {
-                      icon: "🕐",
-                      label: "Hours/Day",
-                      value: `${worker?.hoursPerDay || "—"} hrs`,
                     },
                     {
                       icon: "💳",
@@ -295,11 +284,16 @@ export function TopBar() {
                 <div className="px-4 py-2.5 bg-emerald-50/50 border-t border-slate-100 flex items-center justify-between">
                   <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                    Policy Active
+                    {policy?.status === "active" ? "Legacy active-status record" : "No active cover"}
                   </span>
                   <span className="text-[10px] font-mono text-gray-500">
-                    {policy?.id ? policy.id.slice(0, 11) : "POL-001"}
+                    {policy?.id ? policy.id.slice(0, 11) : "No policy"}
                   </span>
+                </div>
+
+                <div className="sm:hidden px-4 py-3 flex gap-4 text-xs font-bold border-t border-slate-100">
+                  <a href="/actuarial">Actuarial</a>
+                  <a href="/analytics">Analytics</a>
                 </div>
 
                 {/* Sign Out */}

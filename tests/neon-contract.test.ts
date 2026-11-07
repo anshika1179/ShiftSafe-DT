@@ -1,0 +1,30 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { neonConfig } from "@neondatabase/serverless";
+process.env.NODE_ENV = "production";
+process.env.DATABASE_URL = "postgresql://fixture:fixture@fixture.invalid/fixture";
+process.env.SEED_DEMO_DATA = "false";
+process.env.ALLOW_SQLITE_FAILOVER = "true";
+process.env.NEON_QUERY_RETRIES = "0";
+let fail = false;
+let calls = 0;
+neonConfig.fetchFunction = async (_input, init) => {
+  calls++;
+  if (fail) throw new Error("fetch failed ECONNRESET");
+  const body = JSON.parse(String(init?.body));
+  const result = (query: string) => ({ command: /^UPDATE/i.test(query) ? "UPDATE" : "SELECT", rowCount: /^UPDATE/i.test(query) ? 1 : 0, rows: [], fields: [], rowAsArray: true });
+  return new Response(JSON.stringify(body.queries ? { results: body.queries.map((q: { query: string }) => result(q.query)) } : result(body.query)), { status: 200, headers: { "content-type": "application/json" } });
+};
+test("Neon affected-row contract and fail-closed ledger", async () => {
+  const { getDb, getDbProvider } = await import("../backend/src/models/db");
+  const db = getDb();
+  const mutation = await db.prepare("UPDATE workers SET name = ? WHERE id = ?").run("Test", "fixture");
+  assert.equal(mutation.changes, 1, "UPDATE without RETURNING must use rowCount, not returned rows");
+  await db.batch([{ query: "UPDATE workers SET name = ? WHERE id = ?", params: ["Test", "fixture"] }]);
+  assert.equal(getDbProvider(), "neon");
+  const before = calls;
+  fail = true;
+  await assert.rejects(db.prepare("UPDATE workers SET name = ? WHERE id = ?").run("Test", "fixture"), /fetch failed/);
+  assert.equal(getDbProvider(), "neon", "network errors must not create a new local ledger");
+  assert.equal(calls, before + 1, "ambiguous writes are never retried");
+});

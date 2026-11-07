@@ -1,0 +1,7 @@
+{
+  "advisoryUrl": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+  "packageNames": ["braces", "micromatch", "fast-glob", "@next/eslint-plugin-next", "eslint-config-next"],
+  "expiresAt": "2026-11-11T00:00:00Z",
+  "scope": "Development-only Next lint dependency chain. No published patched braces version at review on October 5. Runtime audit must have zero advisories. Any other advisory fails CI.",
+  "mitigation": "Lint patterns are repository-controlled; untrusted input is not sent to glob matching by runtime. Do not execute third-party PR code with secrets. Keep full audit visible and recheck for an upstream patch before expiry."
+}

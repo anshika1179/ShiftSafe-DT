@@ -1,7 +1,7 @@
 {
-  "name": "ShiftSafe DT",
+  "name": "ShiftSafe",
   "short_name": "ShiftSafe",
-  "description": "Parametric micro-insurance for gig workers.",
+  "description": "Personal food-delivery income-protection prototype. No active insurance or payouts.",
   "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#fdfdfd",

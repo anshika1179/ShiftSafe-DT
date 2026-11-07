@@ -7,5 +7,5 @@ import {
 export async function GET(req: NextRequest) {
   const token = req.cookies.get(ADMIN_SESSION_COOKIE)?.value;
   const authenticated = token ? verifyAdminSessionToken(token) : false;
-  return NextResponse.json({ authenticated });
+  return NextResponse.json({ authenticated }, { headers: { "Cache-Control": "no-store" } });
 }

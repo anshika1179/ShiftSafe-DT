@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
 
     const db = getDb();
     const worker = (await db
-      .prepare("SELECT id FROM workers WHERE phone = ? LIMIT 1")
+      .prepare("SELECT id FROM workers WHERE phone = ? AND is_active = 1 LIMIT 1")
       .get(phone)) as { id: string } | undefined;
 
     if (!worker) {

@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Label PR by files changed
-        uses: actions/github-script@v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const { data: files } = await github.rest.pulls.listFiles({
@@ -30,14 +30,14 @@ jobs:
             for (const file of files) {
               const path = file.filename;
               
-              if (path.startsWith('src/app/api/')) labels.add('api');
+              if (path.startsWith('frontend/app/api/')) labels.add('api');
               if (path.endsWith('.tsx') || path.endsWith('.css')) labels.add('ui');
-              if (path.startsWith('ai-engine/')) labels.add('ai/ml');
+              if (path.startsWith('backend/src/engines/')) labels.add('ai/ml');
               if (path.startsWith('.github/')) labels.add('ci/cd');
-              if (path.startsWith('src/lib/')) labels.add('core-logic');
-              if (path === 'package.json' || path === 'package-lock.json') labels.add('dependencies');
+              if (path.startsWith('frontend/lib/') || path.startsWith('backend/src/')) labels.add('core-logic');
+              if (path.endsWith('package.json') || path === 'package-lock.json') labels.add('dependencies');
               if (path.endsWith('.md')) labels.add('documentation');
-              if (path.startsWith('src/app/') && path.endsWith('page.tsx')) labels.add('pages');
+              if (path.startsWith('frontend/app/') && path.endsWith('page.tsx')) labels.add('pages');
             }
 
             if (labels.size > 0) {

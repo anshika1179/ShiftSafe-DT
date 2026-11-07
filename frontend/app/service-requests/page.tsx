@@ -1,46 +1,47 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAppState } from "@/frontend/components/providers/AppProvider";
 import { triggerToast } from "@/frontend/components/ui/Notifications";
+import { databaseTimestampMs } from "@/backend/utils/database-time";
 import { safeReplace } from "@/lib/client/navigation";
 
 const CATEGORIES = [
   {
     value: "claim_dispute",
-    label: "Claim Dispute",
+    label: "Sandbox Claim Question",
     emoji: "⚖️",
-    desc: "Dispute a rejected or blocked claim",
+    desc: "Ask about a sandbox claim record or its review status",
   },
   {
     value: "payout_issue",
-    label: "Payout Issue",
+    label: "Simulated Receipt Question",
     emoji: "💸",
-    desc: "Payment not received or incorrect amount",
+    desc: "Ask about a simulated sandbox receipt. No real money moves",
   },
   {
     value: "policy_correction",
-    label: "Policy Correction",
+    label: "Policy Record Correction",
     emoji: "📋",
-    desc: "Update policy details or coverage",
+    desc: "Fix a wrong detail on a saved or sandbox policy record",
   },
   {
     value: "account_update",
-    label: "Account Update",
+    label: "Profile Update",
     emoji: "👤",
-    desc: "Change phone, UPI ID, or zone info",
+    desc: "Correct work details, city or zone. Do not enter bank or UPI details",
   },
   {
     value: "technical_issue",
     label: "Technical Issue",
     emoji: "🔧",
-    desc: "App bugs, trigger errors, or system problems",
+    desc: "App bugs, weather errors, or page problems",
   },
   {
     value: "general_inquiry",
     label: "General Inquiry",
     emoji: "💬",
-    desc: "Questions about coverage or platform",
+    desc: "Questions about this prototype",
   },
 ];
 
@@ -119,7 +120,9 @@ function getCategoryLabel(category: string): string {
 }
 
 function getRelativeTime(timestamp: string): string {
-  const diffMs = Date.now() - new Date(timestamp).getTime();
+  const diffMs = Date.now() - databaseTimestampMs(timestamp);
+  if (!Number.isFinite(diffMs)) return "Time unavailable";
+  if (diffMs < 0) return "Date unavailable";
   const minutes = Math.floor(diffMs / (60 * 1000));
   if (minutes < 1) return "Just now";
   if (minutes < 60) return `${minutes}m ago`;
@@ -155,31 +158,41 @@ export default function ServiceRequestsPage() {
     if (!isBootstrapping && !isLoggedIn) safeReplace(router, "/");
   }, [isBootstrapping, isLoggedIn, router]);
 
+  const requestVersion = useRef(0);
   const loadRequests = useCallback(async () => {
     if (!worker?.id) return;
+    const version = ++requestVersion.current;
     setIsLoading(true);
+    setRequests([]);
+    setSummary({ total: 0, open: 0, resolved: 0, aiClassified: 0 });
+    setFormError("");
     try {
       const res = await fetch(
         `/api/service-requests?workerId=${encodeURIComponent(worker.id)}`,
         { cache: "no-store" },
       );
+      if (version !== requestVersion.current) return;
+      if (!res.ok) throw new Error("Support records could not load. Retry; no sample records are substituted.");
       if (res.ok) {
         const data = await res.json();
+        if (version !== requestVersion.current) return;
         setRequests(data.requests || []);
         setSummary(
           data.summary || { total: 0, open: 0, resolved: 0, aiClassified: 0 },
         );
       }
-    } catch {
-      // Silently handle — user can retry.
+    } catch (e) {
+      if (version === requestVersion.current) setFormError(e instanceof Error ? e.message : "Support load failed");
     } finally {
-      setIsLoading(false);
+      if (version === requestVersion.current) setIsLoading(false);
     }
-  }, [worker?.id]);
+  }, [worker]);
 
   useEffect(() => {
     if (isLoggedIn && worker?.id) {
-      void loadRequests();
+      const counter = requestVersion;
+      const timer = window.setTimeout(() => { void loadRequests(); }, 0);
+      return () => { window.clearTimeout(timer); ++counter.current; };
     }
   }, [isLoggedIn, worker?.id, loadRequests]);
 
@@ -225,11 +238,8 @@ export default function ServiceRequestsPage() {
         return;
       }
 
-      const aiMessage = data?.aiClassification
-        ? ` AI triage set priority to ${String(data.priority || priority).toUpperCase()}.`
-        : "";
       triggerToast(
-        `Service request submitted successfully! ✓${aiMessage}`,
+        "Service request submitted. Status: open.",
         "success",
       );
 
@@ -275,8 +285,9 @@ export default function ServiceRequestsPage() {
         </button>
       </div>
 
+      {formError && <p role="alert" className="text-red-700">{formError}</p>}
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {!isLoading && !formError && <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div className="glass-card p-4 text-center">
           <div className="text-xl font-bold text-slate-900">
             {summary.total}
@@ -299,15 +310,8 @@ export default function ServiceRequestsPage() {
             Resolved
           </div>
         </div>
-        <div className="glass-card p-4 text-center">
-          <div className="text-xl font-bold text-indigo-500">
-            {summary.aiClassified}
-          </div>
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mt-1">
-            AI Triaged
-          </div>
-        </div>
-      </div>
+
+      </div>}
 
       {/* NEW REQUEST FORM */}
       {view === "new" && (
@@ -450,14 +454,14 @@ export default function ServiceRequestsPage() {
                 </div>
               ))}
             </div>
-          ) : requests.length === 0 ? (
+          ) : formError ? null : requests.length === 0 ? (
             <div className="glass-card p-8 text-center">
               <div className="text-4xl mb-3">📋</div>
               <div className="text-sm font-semibold text-slate-700 mb-1">
                 No service requests yet
               </div>
               <div className="text-xs text-gray-500 mb-4">
-                Need help with a claim dispute, payout issue, or policy change?
+                Have a question about a sandbox record or your work profile?
               </div>
               <button
                 onClick={() => setView("new")}
@@ -514,31 +518,6 @@ export default function ServiceRequestsPage() {
                   <div className="pl-2 text-[11px] text-gray-600 line-clamp-2 mb-2">
                     {req.description}
                   </div>
-
-                  {req.ai && (
-                    <div className="pl-2 mb-2 rounded-lg border border-indigo-200 bg-indigo-50/70 p-2">
-                      <div className="flex flex-wrap items-center gap-1.5 text-[9px]">
-                        <span className="px-2 py-0.5 rounded-full border border-indigo-200 bg-indigo-100 text-indigo-700 font-bold">
-                          urgency {req.ai.urgencyScore}/100
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full border border-indigo-200 bg-indigo-100 text-indigo-700 font-bold capitalize">
-                          {req.ai.sentimentLabel}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full border border-indigo-200 bg-indigo-100 text-indigo-700 font-bold">
-                          confidence{" "}
-                          {Math.round(req.ai.categoryConfidence * 100)}%
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full border border-indigo-200 bg-indigo-100 text-indigo-700 font-bold uppercase">
-                          {req.ai_model_version || "NLP-KW-v1.2"}
-                        </span>
-                      </div>
-                      {req.ai.autoAction && (
-                        <div className="mt-1 text-[10px] text-indigo-700">
-                          Suggested action: {req.ai.autoAction}
-                        </div>
-                      )}
-                    </div>
-                  )}
 
                   {/* Priority + metadata */}
                   <div className="pl-2 flex items-center gap-2">

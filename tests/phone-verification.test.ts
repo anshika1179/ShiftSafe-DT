@@ -1,0 +1,125 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { NextRequest } from "next/server";
+process.env.NODE_ENV = "test";
+process.env.DATABASE_URL = "";
+process.env.SQLITE_DB_PATH = join(mkdtempSync(join(tmpdir(), "shiftsafe-phone-")), "phone.db");
+process.env.SEED_DEMO_DATA = "false";
+process.env.WORKER_SESSION_SECRET = "phone-test-worker-secret-1234567890123456789";
+const config = () => {
+  process.env.PHONE_VERIFICATION_MODE = "twilio_trial";
+  process.env.TWILIO_ACCOUNT_SID = `AC${"a".repeat(32)}`;
+  process.env.TWILIO_AUTH_TOKEN = "fixture-private-token";
+  process.env.TWILIO_VERIFY_SERVICE_SID = `VA${"a".repeat(32)}`;
+  process.env.PHONE_TRIAL_EXPIRES_AT = new Date(Date.now() + 86400000).toISOString();
+  process.env.PHONE_TRIAL_SEND_LIMIT = "3";
+  process.env.PHONE_TRIAL_ALLOWED_NUMBERS = "9000000001,9000000002";
+};
+test("trial phone verification fails closed and binds quota/challenge/proof to owner and phone", async () => {
+  const phone = await import("../frontend/lib/server/phone-verification");
+  const { getDb } = await import("../backend/src/models/db");
+  const { resolvePhoneOwner } = await import("../frontend/lib/server/phone-owner");
+  const { finishGoogleSignIn } = await import("../frontend/lib/server/google-onboarding");
+  const db = getDb();
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  let resultStatus = "pending";
+  let target = "+919000000001";
+  globalThis.fetch = async (_input, init) => {
+    calls++;
+    const fields = new URLSearchParams(String(init?.body));
+    assert.equal(fields.get("To"), target);
+    assert.match(String((init?.headers as Record<string, string>).Authorization), /^Basic /);
+    return new Response(JSON.stringify({ status: resultStatus, to: target, channel: "sms" }), { status: 200 });
+  };
+  try {
+    delete process.env.PHONE_VERIFICATION_MODE;
+    await assert.rejects(phone.startPhoneVerification("google:a", "9000000001"), /not configured/);
+    assert.equal(calls, 0);
+    config();
+    await assert.rejects(phone.startPhoneVerification("google:a", "9000000003"), /not an approved/);
+    assert.equal(calls, 0);
+    process.env.PHONE_TRIAL_EXPIRES_AT = new Date(0).toISOString();
+    await assert.rejects(phone.startPhoneVerification("google:a", "9000000001"), /expired/);
+    config();
+    const first = await phone.startPhoneVerification("google:a", "9000000001");
+    assert.equal(calls, 1);
+    await assert.rejects(phone.startPhoneVerification("google:a", "9000000001"), /cooldown/);
+    await assert.rejects(phone.checkPhoneVerification("google:b", first.challenge, "9000000001", "123456"), /expired/);
+    await assert.rejects(phone.checkPhoneVerification("google:a", first.challenge, "9000000002", "123456"), /expired/);
+    assert.equal(calls, 1);
+    resultStatus = "approved";
+    const checked = await phone.checkPhoneVerification("google:a", first.challenge, "9000000001", "123456");
+    assert.equal(checked.phoneVerified, true);
+    assert.equal(await phone.consumeContactPhoneProof("google:b", "9000000001", checked.phoneProof), false);
+    assert.equal(await phone.consumeContactPhoneProof("google:a", "9000000002", checked.phoneProof), false);
+    assert.equal(await phone.consumeContactPhoneProof("google:a", "9000000001", checked.phoneProof), true);
+    assert.equal(await phone.consumeContactPhoneProof("google:a", "9000000001", checked.phoneProof), false);
+    await assert.rejects(phone.checkPhoneVerification("google:a", first.challenge, "9000000001", "123456"), /used/);
+    await db.prepare("UPDATE phone_trial_usage SET last_send_at = 0").run();
+    resultStatus = "pending";
+    const raced = await Promise.allSettled([phone.startPhoneVerification("google:a", "9000000001"), phone.startPhoneVerification("google:a", "9000000001")]);
+    assert.equal(raced.filter(r => r.status === "fulfilled").length, 1);
+    const challenge = (raced.find(r => r.status === "fulfilled") as PromiseFulfilledResult<{ challenge: string }>).value.challenge;
+    await db.prepare("UPDATE phone_verification_challenges SET expires_at = 0 WHERE id = ?").run(phone.phoneProofHash(challenge));
+    await assert.rejects(phone.checkPhoneVerification("google:a", challenge, "9000000001", "123456"), /expired/);
+    await db.prepare("UPDATE phone_trial_usage SET sends = 3, last_send_at = 0").run();
+    await assert.rejects(phone.startPhoneVerification("google:a", "9000000001"), /limit/);
+    const proof = await finishGoogleSignIn({ subject: "subject-a", email: "fixture@example.invalid" });
+    const req = new NextRequest("http://localhost/api/phone/request", { headers: { origin: "http://localhost" } });
+    assert.equal((await resolvePhoneOwner(req, proof.registrationProof)).key, "google:subject-a");
+    await assert.rejects(resolvePhoneOwner(new NextRequest("http://localhost/api/phone/request", { headers: { origin: "http://evil.invalid" } }), proof.registrationProof), /origin/);
+    await assert.rejects(resolvePhoneOwner(req, "random-proof"), /expired/);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("provider failures keep quota reserved and cannot mark contacts verified", async () => {
+  const phone = await import("../frontend/lib/server/phone-verification");
+  const { getDb } = await import("../backend/src/models/db");
+  const db = getDb();
+  config();
+  await db.prepare("DELETE FROM phone_trial_usage").run();
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => { throw new Error("timeout"); };
+    await assert.rejects(phone.startPhoneVerification("google:failure", "9000000001"), /unavailable/);
+    assert.equal((await db.prepare("SELECT sends FROM phone_trial_usage").get())?.sends, 1);
+    await db.prepare("UPDATE phone_trial_usage SET last_send_at = 0").run();
+    globalThis.fetch = async () => new Response(JSON.stringify({ status: "pending", to: "+919000000002", channel: "sms" }));
+    await assert.rejects(phone.startPhoneVerification("google:failure", "9000000001"), /did not accept/);
+    assert.equal((await db.prepare("SELECT sends FROM phone_trial_usage").get())?.sends, 2);
+    await db.prepare("UPDATE phone_trial_usage SET last_send_at = 0").run();
+    globalThis.fetch = async () => new Response(JSON.stringify({ status: "pending", to: "+919000000001", channel: "sms" }));
+    const challenge = await phone.startPhoneVerification("google:failure", "9000000001");
+    globalThis.fetch = async () => new Response(JSON.stringify({ status: "approved", to: "+919000000002" }));
+    for (let i = 0; i < 5; i++) await assert.rejects(phone.checkPhoneVerification("google:failure", challenge.challenge, "9000000001", "123456"), /Incorrect/);
+    await assert.rejects(phone.checkPhoneVerification("google:failure", challenge.challenge, "9000000001", "123456"), /attempt limit/);
+    assert.equal((await db.prepare("SELECT consumed FROM phone_verification_challenges WHERE id = ?").get(phone.phoneProofHash(challenge.challenge)))?.consumed, 0);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("registration persists an exact owner phone proof and rejects a different contact", async () => {
+  const { getDb } = await import("../backend/src/models/db");
+  const { phoneProofHash } = await import("../frontend/lib/server/phone-verification");
+  const { finishGoogleSignIn } = await import("../frontend/lib/server/google-onboarding");
+  const register = await import("../frontend/app/api/register/route");
+  const db = getDb();
+  const base = { name: "Phone Test", phone: "9000000001", platform: "Zomato", city: "Mumbai", zone: "Andheri East", avgWeeklyIncome: 4200, daysWorkedThisWeek: 6, totalActiveDeliveryDays: 14, daysActiveInLast30: 14, consents: {}, authMethod: "google" };
+  const req = (body: object) => new NextRequest("http://localhost/api/register", { method: "POST", headers: { origin: "http://localhost", "content-type": "application/json" }, body: JSON.stringify(body) });
+  const google = await finishGoogleSignIn({ subject: "verified-contact", email: "phone@example.invalid" });
+  await db.prepare("UPDATE google_registration_proofs SET email_link_verified = 1 WHERE subject = ?").run("verified-contact");
+  const proof = "exact-contact-proof";
+  await db.prepare("INSERT INTO contact_phone_proofs (id, owner_key, phone, expires_at) VALUES (?, ?, ?, ?)").run(phoneProofHash(proof), "google:verified-contact", base.phone, Date.now() + 60000);
+  const res = await register.POST(req({ ...base, registrationProof: google.registrationProof, phoneProof: proof }));
+  assert.equal(res.status, 200);
+  const contact = await db.prepare("SELECT c.phone_verified FROM worker_contacts c JOIN worker_identities i ON i.worker_id = c.worker_id WHERE i.subject = ?").get("verified-contact");
+  assert.equal(contact?.phone_verified, 1);
+  const other = await finishGoogleSignIn({ subject: "mismatched-contact", email: "other@example.invalid" });
+  await db.prepare("UPDATE google_registration_proofs SET email_link_verified = 1 WHERE subject = ?").run("mismatched-contact");
+  await db.prepare("INSERT INTO contact_phone_proofs (id, owner_key, phone, expires_at) VALUES (?, ?, ?, ?)").run(phoneProofHash("wrong-contact-proof"), "google:mismatched-contact", "9000000002", Date.now() + 60000);
+  assert.equal((await register.POST(req({ ...base, registrationProof: other.registrationProof, phoneProof: "wrong-contact-proof" }))).status, 401);
+  assert.equal(await db.prepare("SELECT worker_id FROM worker_identities WHERE subject = ?").get("mismatched-contact"), undefined);
+});

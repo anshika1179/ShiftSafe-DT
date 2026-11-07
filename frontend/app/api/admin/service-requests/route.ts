@@ -1,21 +1,15 @@
 // GET /api/admin/service-requests — List all service requests for admin
 // PATCH /api/admin/service-requests — Update status / add admin notes
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
+import { getAdminEmail } from "@/lib/server/env";
 import { getDb } from "@/backend/models/db";
 import {
   ADMIN_SESSION_COOKIE,
   verifyAdminSessionToken,
 } from "@/lib/server/admin-auth";
 
-interface ServiceRequestAiMetadata {
-  urgencyScore: number;
-  suggestedPriority: "low" | "medium" | "high" | "urgent";
-  sentimentLabel: "positive" | "neutral" | "negative" | "angry";
-  categoryConfidence: number;
-  autoAction: string | null;
-  reasoning: string;
-  generatedAt: string;
-}
+
 
 interface ServiceRequestRow {
   id: string;
@@ -31,42 +25,6 @@ interface ServiceRequestRow {
   ai_model_version: string | null;
 }
 
-function parseAiMetadata(raw: string | null): ServiceRequestAiMetadata | null {
-  if (!raw) return null;
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return null;
-    }
-    const data = parsed as Partial<ServiceRequestAiMetadata>;
-    if (typeof data.urgencyScore !== "number") return null;
-    if (typeof data.suggestedPriority !== "string") return null;
-    if (typeof data.sentimentLabel !== "string") return null;
-    if (typeof data.categoryConfidence !== "number") return null;
-    if (typeof data.reasoning !== "string") return null;
-
-    return {
-      urgencyScore: data.urgencyScore,
-      suggestedPriority:
-        data.suggestedPriority as ServiceRequestAiMetadata["suggestedPriority"],
-      sentimentLabel:
-        data.sentimentLabel as ServiceRequestAiMetadata["sentimentLabel"],
-      categoryConfidence: data.categoryConfidence,
-      autoAction:
-        typeof data.autoAction === "string" || data.autoAction === null
-          ? data.autoAction
-          : null,
-      reasoning: data.reasoning,
-      generatedAt:
-        typeof data.generatedAt === "string"
-          ? data.generatedAt
-          : new Date().toISOString(),
-    };
-  } catch {
-    return null;
-  }
-}
 
 function isAdminAuthenticated(req: NextRequest): boolean {
   const token = req.cookies.get(ADMIN_SESSION_COOKIE)?.value;
@@ -79,6 +37,7 @@ export async function GET(req: NextRequest) {
   }
 
   const statusFilter = req.nextUrl.searchParams.get("status") || "all";
+  if (!["all", "open", "in_progress", "resolved", "closed"].includes(statusFilter)) return NextResponse.json({ error: "Invalid status filter" }, { status: 400 });
   const db = getDb();
 
   const whereClause = statusFilter === "all" ? "" : "WHERE sr.status = ?";
@@ -100,7 +59,9 @@ export async function GET(req: NextRequest) {
 
   const requests = rows.map((row) => ({
     ...row,
-    ai: parseAiMetadata(row.ai_metadata),
+    ai_metadata: null,
+    ai_model_version: null,
+    ai: null,
   }));
 
   const summaryRows = (await db
@@ -132,7 +93,8 @@ export async function GET(req: NextRequest) {
 
   summary.aiClassified = requests.filter((row) => row.ai !== null).length;
 
-  return NextResponse.json({ requests, summary });
+  const matchedTotal = statusFilter === "all" ? summary.total : Number(summary[statusFilter as "open" | "in_progress" | "resolved" | "closed"]);
+  return NextResponse.json({ requests, summary, matchedTotal, limit: 100 }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function PATCH(req: NextRequest) {
@@ -140,9 +102,12 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (req.headers.get("origin") !== req.nextUrl.origin) return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
+  let body;
+  try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid request body" }, { status: 400 }); }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   try {
-    const body = await req.json();
-    const { requestId, status, adminNotes } = body;
+    const { requestId, status, adminNotes, expectedUpdatedAt, expectedRevision } = body;
 
     const safeRequestId = String(requestId || "").trim();
     if (!safeRequestId) {
@@ -165,7 +130,7 @@ export async function PATCH(req: NextRequest) {
 
     const db = getDb();
     const existing = await db
-      .prepare("SELECT id FROM service_requests WHERE id = ?")
+      .prepare("SELECT id, status, admin_notes, resolved_at, updated_at, last_change_id FROM service_requests WHERE id = ?")
       .get(safeRequestId);
     if (!existing) {
       return NextResponse.json(
@@ -174,21 +139,27 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    const safeNotes = adminNotes
-      ? String(adminNotes).trim().slice(0, 1000)
-      : null;
-    const resolvedAt =
-      safeStatus === "resolved" || safeStatus === "closed"
-        ? new Date().toISOString()
-        : null;
-
-    await db
-      .prepare(
-        `UPDATE service_requests
-         SET status = ?, admin_notes = COALESCE(?, admin_notes), resolved_at = COALESCE(?, resolved_at), updated_at = datetime('now')
-         WHERE id = ?`,
-      )
-      .run(safeStatus, safeNotes, resolvedAt, safeRequestId);
+    if (adminNotes !== undefined && (typeof adminNotes !== "string" || adminNotes.length > 1000)) return NextResponse.json({ error: "Notes must be text up to 1000 characters" }, { status: 400 });
+    if (expectedUpdatedAt !== undefined && typeof expectedUpdatedAt !== "string") return NextResponse.json({ error: "Invalid revision" }, { status: 400 });
+    if (expectedRevision !== undefined && typeof expectedRevision !== "string") return NextResponse.json({ error: "Invalid revision" }, { status: 400 });
+    if ((expectedUpdatedAt !== undefined && expectedUpdatedAt !== existing.updated_at) || (expectedRevision !== undefined && expectedRevision !== existing.last_change_id)) return NextResponse.json({ error: "This request changed. Reload before saving." }, { status: 409 });
+    const safeNotes = adminNotes === undefined ? existing.admin_notes : adminNotes.trim();
+    if (safeStatus === existing.status && (safeNotes || "") === (existing.admin_notes || "")) return NextResponse.json({ success: true, requestId: safeRequestId, status: safeStatus, unchanged: true });
+    const changeId = randomUUID(), changedAt = new Date().toISOString();
+    const resolvedAt = safeStatus === "resolved" || safeStatus === "closed" ? changedAt : null;
+    // UPDATE holds the row lock until this transaction commits. INSERT SELECT is
+    // conditional on our unique change token, so a stale update creates no event.
+    // A failed history write rolls back the ticket update as well.
+    await db.batch([
+      { query: `UPDATE service_requests SET status = ?, admin_notes = ?,
+          resolved_at = CASE WHEN ? IN ('resolved', 'closed') THEN COALESCE(resolved_at, ?) ELSE NULL END,
+          updated_at = ?, last_change_id = ?, history_revision = history_revision + 1 WHERE id = ? AND updated_at = ? AND last_change_id = ?`,
+        params: [safeStatus, safeNotes, safeStatus, resolvedAt, changedAt, changeId, safeRequestId, existing.updated_at, existing.last_change_id] },
+      { query: `INSERT INTO service_request_history (id, request_id, actor_email, revision, old_status, new_status, old_notes, new_notes, changed_at)
+          SELECT ?, id, ?, history_revision, ?, status, ?, admin_notes, ? FROM service_requests WHERE id = ? AND last_change_id = ?`,
+        params: [changeId, getAdminEmail(), existing.status, existing.admin_notes, changedAt, safeRequestId, changeId] },
+    ]);
+    if (!await db.prepare("SELECT id FROM service_request_history WHERE id = ?").get(changeId)) return NextResponse.json({ error: "This request changed. Reload before saving." }, { status: 409 });
 
     return NextResponse.json({
       success: true,
@@ -198,8 +169,8 @@ export async function PATCH(req: NextRequest) {
     });
   } catch {
     return NextResponse.json(
-      { error: "Invalid request body" },
-      { status: 400 },
+      { error: "Could not update request. Reload to check its current state." },
+      { status: 500 },
     );
   }
 }

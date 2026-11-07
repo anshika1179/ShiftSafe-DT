@@ -3,35 +3,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppState } from "@/frontend/components/providers/AppProvider";
 import {
-  triggerNotification,
   triggerToast,
 } from "@/frontend/components/ui/Notifications";
-import { getTriggerEmoji } from "@/backend/utils/store";
+import { TRIGGER_RULES } from "@/backend/config/trigger-rules";
 import { safeReplace } from "@/lib/client/navigation";
-
-let localClaimSequence = 0;
-
-function createLocalClaimId(): string {
-  localClaimSequence += 1;
-  return `CLM-local-${localClaimSequence}`;
-}
-
-function normalizeStatus(
-  status: unknown,
-): "paid" | "pending" | "review" | "blocked" {
-  const value = String(status || "").toLowerCase();
-  if (value === "paid" || value === "auto_approved") return "paid";
-  if (value === "review") return "review";
-  if (value === "blocked") return "blocked";
-  return "pending";
-}
-
-function getFraudColor(score: number): string {
-  if (score <= 24) return "#34d399";
-  if (score <= 44) return "#4d9fff";
-  if (score <= 69) return "#ff6b35";
-  return "#ff3b5c";
-}
 
 type GpsStatus =
   | "idle"
@@ -56,17 +31,19 @@ interface GpsState {
 interface EvidenceState {
   name: string;
   sizeKb: number;
-  source: "upload" | "demo";
+  source: "upload";
 }
 
 // ── Live Weather & AQI types ──
 interface LiveWeather {
-  temperature: number;
-  feelsLike: number;
-  humidity: number;
-  windSpeed: number;
+  observedAt?: string;
+  rainObservedAt?: string;
+  temperature: number | null;
+  feelsLike: number | null;
+  humidity: number | null;
+  windSpeed: number | null;
   windGust: number | null;
-  rainfall1h: number;
+  rainfall1h: number | null;
   rainfall3h: number;
   visibility: number;
   pressure: number;
@@ -76,7 +53,8 @@ interface LiveWeather {
 }
 
 interface LiveAqi {
-  aqi: number;
+  observedAt?: string;
+  aqi: number | null;
   level: string;
   dominantPollutant: string;
   pm25: number | null;
@@ -93,11 +71,14 @@ interface TriggerAlert {
 }
 
 interface LiveData {
-  weather: LiveWeather;
-  aqi: LiveAqi;
+  weather: LiveWeather | null;
+  aqi: LiveAqi | null;
   triggers: TriggerAlert[];
   fetchedAt: string;
   source: string;
+  status: string;
+  issues: string[];
+  location: { precision: string };
 }
 
 function getAqiColor(aqi: number): string {
@@ -111,7 +92,7 @@ function getAqiColor(aqi: number): string {
 
 function getRainfallStatus(mm: number): { label: string; color: string; alert: boolean } {
   if (mm >= 64.5) return { label: "Extreme Rain ⚠️", color: "#dc2626", alert: true };
-  if (mm >= 30) return { label: "Heavy Rain", color: "#f87171", alert: true };
+  if (mm >= TRIGGER_RULES.rainfallHourlyMm) return { label: "Heavy Rain", color: "#f87171", alert: true };
   if (mm >= 15) return { label: "Moderate Rain", color: "#fbbf24", alert: false };
   if (mm > 0) return { label: "Light Rain", color: "#60a5fa", alert: false };
   return { label: "No Rain", color: "#34d399", alert: false };
@@ -119,7 +100,7 @@ function getRainfallStatus(mm: number): { label: string; color: string; alert: b
 
 function getTempStatus(temp: number): { label: string; color: string; alert: boolean } {
   if (temp >= 45) return { label: "Extreme Heat ⚠️", color: "#dc2626", alert: true };
-  if (temp >= 42) return { label: "Heatwave", color: "#f87171", alert: true };
+  if (temp >= TRIGGER_RULES.temperatureC) return { label: "Heatwave", color: "#f87171", alert: true };
   if (temp >= 38) return { label: "Very Hot", color: "#fb923c", alert: false };
   if (temp >= 30) return { label: "Warm", color: "#fbbf24", alert: false };
   if (temp >= 20) return { label: "Pleasant", color: "#34d399", alert: false };
@@ -128,12 +109,12 @@ function getTempStatus(temp: number): { label: string; color: string; alert: boo
 
 export default function MonitoringPage() {
   const router = useRouter();
-  const { worker, addClaim, isLoggedIn, isBootstrapping } = useAppState();
-  const [processing, setProcessing] = useState(false);
+  const { worker, isLoggedIn, isBootstrapping } = useAppState();
   const [gpsChecking, setGpsChecking] = useState(false);
   const [evidence, setEvidence] = useState<EvidenceState | null>(null);
   const evidenceInputRef = useRef<HTMLInputElement | null>(null);
   const gpsRequestRef = useRef(0);
+  const weatherRequestRef = useRef(0);
   const gpsCheckingRef = useRef(false);
   const [mapZoom, setMapZoom] = useState(14);
   const [gpsState, setGpsState] = useState<GpsState>({
@@ -144,6 +125,9 @@ export default function MonitoringPage() {
   // ── Live weather/AQI state ──
   const [liveData, setLiveData] = useState<LiveData | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(true);
+  const [clock, setClock] = useState(0);
+  useEffect(() => { const tick = () => setClock(Date.now()); tick(); const timer = setInterval(tick, 60000); return () => clearInterval(timer); }, []);
+  const [weatherError, setWeatherError] = useState("");
   const [lastRefresh, setLastRefresh] = useState<string>("");
 
   useEffect(() => {
@@ -152,27 +136,31 @@ export default function MonitoringPage() {
 
   // ── Fetch live weather & AQI ──
   const fetchWeather = useCallback(async (lat?: number, lon?: number) => {
+    const requestId = ++weatherRequestRef.current;
     setWeatherLoading(true);
+    setLiveData(null); setWeatherError("");
     try {
       const params = new URLSearchParams();
       if (lat !== undefined && lon !== undefined) {
         params.set("lat", lat.toFixed(6));
         params.set("lon", lon.toFixed(6));
       }
-      params.set("city", worker?.city || "mumbai");
+      params.set("city", worker?.city || "");
 
       const res = await fetch(`/api/weather?${params.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
+      const data = await res.json();
+      if (weatherRequestRef.current !== requestId) return;
+      if (res.ok || data.status === "unavailable") {
         setLiveData(data);
         setLastRefresh(new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
-      }
-    } catch {
-      // Weather fetch failed silently; UI shows fallback
+      } else throw new Error(data.error || "Environmental data unavailable");
+    } catch (error) {
+      if (weatherRequestRef.current !== requestId) return;
+      setLiveData(null); setWeatherError(error instanceof Error ? error.message : "Environmental data unavailable");
     } finally {
-      setWeatherLoading(false);
+      if (weatherRequestRef.current === requestId) setWeatherLoading(false);
     }
-  }, [worker?.city]);
+  }, [worker]);
 
   const verifyGps = useCallback(async () => {
     if (
@@ -225,6 +213,7 @@ export default function MonitoringPage() {
         ? window.setTimeout(() => {
             if (gpsRequestRef.current !== requestId) return;
             gpsRequestRef.current += 1;
+            gpsCheckingRef.current = false;
             setGpsState({
               status: "manual_review",
               message:
@@ -252,7 +241,7 @@ export default function MonitoringPage() {
         lat: Number(position.coords.latitude.toFixed(6)),
         lon: Number(position.coords.longitude.toFixed(6)),
       };
-      const accuracyMeters = Math.round(position.coords.accuracy || 0);
+      const accuracyMeters = Math.round(position.coords.accuracy);
 
       // Fetch weather for the GPS location
       void fetchWeather(workerLocation.lat, workerLocation.lon);
@@ -261,10 +250,12 @@ export default function MonitoringPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          city: worker?.city || "Mumbai",
-          zone: worker?.zone || "Andheri East",
+          city: worker?.city || "",
+          zone: worker?.zone || "",
           workerLocation,
+          workerId: worker?.id,
           gpsAccuracyMeters: accuracyMeters,
+          observedAt: position.timestamp,
         }),
       });
 
@@ -293,7 +284,7 @@ export default function MonitoringPage() {
         accuracyMeters: Number(payload?.gpsAccuracyMeters || accuracyMeters),
         distanceKm: Number(payload?.distanceKm || 0),
         zoneSource: String(payload?.zoneContext?.source || "unknown"),
-        lastCheckedAt: new Date().toISOString(),
+        lastCheckedAt: new Date(position.timestamp).toISOString(),
       });
     } catch (error) {
       if (gpsRequestRef.current !== requestId) return;
@@ -307,7 +298,7 @@ export default function MonitoringPage() {
         const geolocationError = error as GeolocationPositionError;
         const deniedMessage =
           geolocationError.code === geolocationError.PERMISSION_DENIED
-            ? "GPS permission denied. Enable location to strengthen fraud validation."
+            ? "GPS permission denied. Location permission is off; city-center weather remains an unverified preview."
             : geolocationError.code === geolocationError.POSITION_UNAVAILABLE
               ? "GPS position unavailable right now. Move to open sky and retry."
               : "GPS request timed out. Retry once network/location improves.";
@@ -324,7 +315,7 @@ export default function MonitoringPage() {
         setGpsState({
           status: "error",
           message:
-            "Unable to verify GPS right now. You can continue with screenshot evidence.",
+            "Unable to verify GPS right now. City-center weather remains an unverified preview.",
           lastCheckedAt: new Date().toISOString(),
         });
       }
@@ -342,141 +333,37 @@ export default function MonitoringPage() {
         setGpsChecking(false);
       }
     }
-  }, [worker?.city, worker?.zone, fetchWeather]);
+  }, [worker, fetchWeather]);
 
   useEffect(() => {
     if (isBootstrapping || !isLoggedIn) return;
-    void verifyGps();
+    const timer = window.setTimeout(() => { void verifyGps(); }, 0);
+    return () => window.clearTimeout(timer);
   }, [isBootstrapping, isLoggedIn, verifyGps]);
+
+  // Weather preview must not wait for GPS permission, callbacks or watchdogs.
+  useEffect(() => {
+    if (isBootstrapping || !isLoggedIn) return;
+    const timer = window.setTimeout(() => { void fetchWeather(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [isBootstrapping, isLoggedIn, fetchWeather]);
 
   // Auto-refresh weather every 5 minutes
   useEffect(() => {
     if (!isLoggedIn || isBootstrapping) return;
     const interval = setInterval(() => {
-      if (gpsState.coords) {
+      if (gpsState.coords && gpsState.lastCheckedAt && Date.now() - new Date(gpsState.lastCheckedAt).getTime() < TRIGGER_RULES.maxGpsAgeMinutes * 60000) {
         void fetchWeather(gpsState.coords.lat, gpsState.coords.lon);
       } else {
         void fetchWeather();
       }
     }, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [isLoggedIn, isBootstrapping, gpsState.coords, fetchWeather]);
+  }, [isLoggedIn, isBootstrapping, gpsState.coords, gpsState.lastCheckedAt, fetchWeather]);
 
   if (isBootstrapping) {
     return null;
   }
-
-  const dailyIncome = worker ? Math.round(worker.avgWeeklyEarnings / 7) : 1000;
-  const hoursPerDay = worker?.hoursPerDay || 7;
-  const avgIncomePerHour = parseFloat((dailyIncome / hoursPerDay).toFixed(2));
-  const lostHours = 6;
-  const calculatedClaim = Math.round(lostHours * avgIncomePerHour);
-
-  const handleClaim = async (trigger: TriggerAlert) => {
-    if (!worker?.id) {
-      triggerToast("Worker profile missing. Please login again.", "error");
-      return;
-    }
-
-    setProcessing(true);
-    triggerNotification({
-      emoji: "🌍",
-      title: `${trigger.title} — Fraud Screening`,
-      subtitle: "Disruption mapped and queued for verification",
-      value: "Risk + eligibility checks running",
-      amount: calculatedClaim,
-    });
-
-    await new Promise((r) => setTimeout(r, 1200));
-
-    try {
-      const res = await fetch("/api/triggers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workerId: worker.id,
-          simulate: false, // Actually submit the real live trigger details!
-          triggerType: trigger.type,
-          severity: trigger.severity,
-          zone: worker.zone || "Andheri East",
-          city: worker.city || "Mumbai",
-          workerLocation: gpsState.coords,
-          gpsAccuracyMeters: gpsState.accuracyMeters,
-          evidenceName: evidence?.name,
-        }),
-      });
-
-      const payload = await res.json();
-      const claimDataVal = payload?.claim || (payload?.claims && payload.claims[0]) || {};
-      const claimData = claimDataVal as {
-        claimId?: string;
-        amount?: number;
-        status?: string;
-        settlement?: { transactionRef?: string; channel?: string };
-        fraud?: { score?: number; label?: string };
-        fraudScore?: number;
-        fraudLabel?: string;
-        error?: string;
-      };
-
-      const status =
-        res.status === 403 ? "blocked" : normalizeStatus(claimData.status);
-      const fraudScore = Number(
-        claimData.fraud?.score ?? claimData.fraudScore ?? 0,
-      );
-      const fraudLabel =
-        claimData.fraud?.label ||
-        claimData.fraudLabel ||
-        `${fraudScore}/100 ${status === "blocked" ? "Blocked" : "Scored"}`;
-      const settledAmount = Number(claimData.amount || calculatedClaim);
-
-      if (status !== "blocked") {
-        addClaim({
-          id: claimData.claimId || createLocalClaimId(),
-          triggerType: trigger.type,
-          triggerEmoji: trigger.emoji,
-          triggerName: trigger.title,
-          triggerValue: trigger.value,
-          amount: settledAmount,
-          status,
-          fraudScore,
-          fraudLabel,
-          fraudColor: getFraudColor(fraudScore),
-          payoutRef:
-            claimData.settlement?.transactionRef ||
-            ((status as string) === "paid" || (status as string) === "auto_approved" ? "RAZORPAY-PAYOUT-TXN" : "UNDER-REVIEW"),
-          timestamp: new Date().toISOString(),
-          relativeTime: "Just now",
-          zone: worker.zone || "Andheri East",
-        });
-      }
-
-      if (status === "paid") {
-        triggerToast(
-          `₹${settledAmount} approved via ${claimData.settlement?.channel || "UPI"} ✓`,
-          "success",
-        );
-        setEvidence(null);
-      } else if (status === "review") {
-        triggerToast(
-          "Claim queued for manual fraud review. No payout yet.",
-          "success",
-        );
-        setEvidence(null);
-      } else if (status === "blocked") {
-        triggerToast(
-          claimData.error || "Claim blocked by fraud checks.",
-          "error",
-        );
-      } else {
-        triggerToast("Claim captured and pending verification.", "success");
-      }
-    } catch {
-      triggerToast("Unable to file disruption claim right now.", "error");
-    } finally {
-      setProcessing(false);
-    }
-  };
 
   const handleScreenshotUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -484,16 +371,7 @@ export default function MonitoringPage() {
 
     const sizeKb = Math.max(1, Math.round(file.size / 1024));
     setEvidence({ name: file.name, sizeKb, source: "upload" });
-    triggerToast("Screenshot attached successfully", "success");
-  };
-
-  const handleUseDemoEvidence = () => {
-    setEvidence({
-      name: "demo-zone-evidence.jpg",
-      sizeKb: 148,
-      source: "demo",
-    });
-    triggerToast("Demo evidence attached", "success");
+    triggerToast("Selected on this device only. No file was uploaded or verified.", "success");
   };
 
   const gpsBannerClasses =
@@ -523,34 +401,35 @@ export default function MonitoringPage() {
                   : "⚠️ GPS Unavailable";
 
   // Map uses GPS coordinates when available
-  const mapQuery = gpsState.coords
+  const gpsFresh = !!gpsState.lastCheckedAt && clock - new Date(gpsState.lastCheckedAt).getTime() < TRIGGER_RULES.maxGpsAgeMinutes * 60000;
+  const mapQuery = gpsState.coords && gpsFresh
     ? `${gpsState.coords.lat},${gpsState.coords.lon}`
-    : `${worker?.zone || "Andheri East"}, ${worker?.city || "Mumbai"}, India`;
+    : `${worker?.zone || ""}, ${worker?.city || ""}, India`;
 
   // Weather data with fallback
   const weather = liveData?.weather;
   const aqiData = liveData?.aqi;
   const activeTriggers = liveData?.triggers || [];
-  const rainfallStatus = getRainfallStatus(weather?.rainfall1h || 0);
-  const tempStatus = getTempStatus(weather?.temperature || 30);
+  const rainfallStatus = weather?.rainfall1h == null ? { label: "Unavailable", color: "#94a3b8", alert: false } : getRainfallStatus(weather.rainfall1h);
+  const tempStatus = weather?.temperature == null ? { label: "Unavailable", color: "#94a3b8", alert: false } : getTempStatus(weather.temperature);
 
   return (
     <div className="space-y-4 max-w-120 mx-auto fade-in pb-8">
       {/* ── Header ── */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            Live Monitoring
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2 flex-wrap">
+            Environmental preview
             <span className="live-dot" />
           </h1>
           <p className="text-sm text-gray-500">
-            Real-time weather · AQI · GPS verification
+            Modelled weather · US AQI · client GPS comparison
           </p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={() => {
-              if (gpsState.coords) void fetchWeather(gpsState.coords.lat, gpsState.coords.lon);
+              if (gpsState.coords && gpsFresh) void fetchWeather(gpsState.coords.lat, gpsState.coords.lon);
               else void fetchWeather();
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-xs font-semibold text-blue-600 hover:bg-blue-100 transition border border-blue-200"
@@ -624,21 +503,7 @@ export default function MonitoringPage() {
                   </span>
                 </div>
                 <div className="text-xs text-slate-600 mt-0.5">{trigger.value}</div>
-                {trigger.eligible && (
-                  <div className="mt-2 flex flex-col gap-2">
-                    <div className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
-                      <span className="w-3 h-3 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[8px]">✓</span>
-                      You are eligible to file a claim for this event
-                    </div>
-                    <button
-                      disabled={processing}
-                      onClick={() => handleClaim(trigger)}
-                      className="w-full text-xs font-bold bg-slate-900 text-white py-2 rounded-lg hover:bg-slate-800 transition shadow disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      {processing ? "Processing via Razorpay..." : "⚡ Submit Claim Instantly"}
-                    </button>
-                  </div>
-                )}
+
               </div>
             </div>
           ))}
@@ -646,32 +511,35 @@ export default function MonitoringPage() {
       )}
 
       {activeTriggers.length === 0 && !weatherLoading && (
-        <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex gap-3">
-          <div className="text-emerald-500 text-xl">✅</div>
+        <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl flex gap-3">
+          <div className="text-slate-500 text-xl">ℹ</div>
           <div>
-            <div className="text-sm font-bold text-emerald-700">No Active Disruptions</div>
-            <div className="text-xs text-emerald-600">
-              Weather and air quality are within safe limits. You&apos;re covered if conditions change.
+            <div className="text-sm font-bold text-slate-700">{liveData?.status === "available" ? "No configured threshold detected" : "Environmental assessment unavailable or partial"}</div>
+            <div className="text-xs text-slate-600">
+              Available model data shows no configured threshold crossing. Missing data is unknown, not safe. This preview establishes no cover.
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Live Conditions Grid ── */}
+      {/* ── Modelled conditions Grid ── */}
       <div>
         <div className="flex items-center justify-between mb-2 px-1">
           <div className="text-[11px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
             <span className="live-dot" style={{ width: 6, height: 6 }} />
-            Live Conditions
+            Modelled conditions
           </div>
           {lastRefresh && (
             <div className="text-[10px] text-gray-400">
               Updated {lastRefresh}
-              {liveData?.source === "live" && <span className="text-emerald-500 ml-1">• API Live</span>}
+              <span className="ml-1">• {liveData?.status || "unavailable"}</span>
             </div>
           )}
         </div>
 
+        <p className="text-xs text-gray-500 mb-3">Open-Meteo weather estimates; CAMS global air quality is roughly 45 km, not a street sensor. US AQI is not Indian AQI. {liveData?.location?.precision === "city_center" ? "Location: city center, not your work zone." : "Coordinates are client-reported, not verified."} <a className="underline" href="https://open-meteo.com/">Open-Meteo</a> / <a className="underline" href="https://atmosphere.copernicus.eu/">CAMS</a>. Rules {TRIGGER_RULES.version}: rain {TRIGGER_RULES.rainfallHourlyMm} mm in the preceding hour, heat {TRIGGER_RULES.temperatureC}°C, US AQI {TRIGGER_RULES.usAqi}. Preview only, no claim eligibility.</p>
+        <p className="text-[10px] text-gray-500 mb-2">Provider times (UTC): weather {weather?.observedAt || "unavailable"}, preceding-hour rain {weather?.rainObservedAt || "unavailable"}, US AQI {aqiData?.observedAt || "unavailable"}. Retrieval time is not observation time.</p>
+        {(weatherError || liveData?.issues?.length) ? <p role="alert" className="text-xs text-amber-700 mb-3">{weatherError || liveData?.issues.join("; ")}</p> : null}
         {weatherLoading && !liveData ? (
           <div className="grid grid-cols-2 gap-3">
             {[1, 2, 3, 4].map((i) => (
@@ -690,7 +558,7 @@ export default function MonitoringPage() {
               <div className="text-xl mb-1">🌧️</div>
               <div className="text-[10px] font-bold text-gray-500 uppercase">Rainfall</div>
               <div className="text-xl font-black" style={{ color: rainfallStatus.color }}>
-                {weather?.rainfall1h ?? 0} mm
+                {weather?.rainfall1h ?? "—"} mm
               </div>
               <div className="text-[9px] font-bold mt-1" style={{ color: rainfallStatus.color }}>
                 {rainfallStatus.label}
@@ -707,10 +575,10 @@ export default function MonitoringPage() {
               <div className="text-xl mb-1">🌡️</div>
               <div className="text-[10px] font-bold text-gray-500 uppercase">Temperature</div>
               <div className="text-xl font-black" style={{ color: tempStatus.color }}>
-                {weather?.temperature ?? 30}°C
+                {weather?.temperature ?? "—"}°C
               </div>
               <div className="text-[9px] text-slate-500 mt-1">
-                Feels {weather?.feelsLike ?? 30}°C · {weather?.humidity ?? 50}% humidity
+                Feels {weather?.feelsLike ?? "—"}°C · {weather?.humidity ?? "—"}% humidity
               </div>
             </div>
 
@@ -722,15 +590,15 @@ export default function MonitoringPage() {
                 <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
               )}
               <div className="text-xl mb-1">💨</div>
-              <div className="text-[10px] font-bold text-gray-500 uppercase">Air Quality</div>
-              <div className="text-xl font-black" style={{ color: getAqiColor(aqiData?.aqi ?? 50) }}>
+              <div className="text-[10px] font-bold text-gray-500 uppercase">Air Quality (US AQI)</div>
+              <div className="text-xl font-black" style={{ color: aqiData?.aqi == null ? "#94a3b8" : getAqiColor(aqiData.aqi) }}>
                 {aqiData?.aqi ?? "—"}
               </div>
-              <div className="text-[9px] font-bold mt-1" style={{ color: getAqiColor(aqiData?.aqi ?? 50) }}>
-                {aqiData?.level ?? "Loading..."}
+              <div className="text-[9px] font-bold mt-1" style={{ color: aqiData?.aqi == null ? "#94a3b8" : getAqiColor(aqiData.aqi) }}>
+                {aqiData?.level ?? "Unavailable"}
               </div>
-              {aqiData?.pm25 && (
-                <div className="text-[8px] text-gray-400 mt-0.5">PM2.5: {aqiData.pm25} · {aqiData.dominantPollutant}</div>
+              {aqiData?.pm25 != null && (
+                <div className="text-[8px] text-gray-400 mt-0.5">PM2.5: {aqiData.pm25} µg/m³</div>
               )}
             </div>
 
@@ -739,10 +607,10 @@ export default function MonitoringPage() {
               <div className="text-xl mb-1">💨</div>
               <div className="text-[10px] font-bold text-gray-500 uppercase">Wind & Visibility</div>
               <div className="text-xl font-black text-slate-800">
-                {weather?.windSpeed ?? 0} <span className="text-sm font-normal text-gray-400">km/h</span>
+                {weather?.windSpeed ?? "—"} <span className="text-sm font-normal text-gray-400">km/h</span>
               </div>
               <div className="text-[9px] text-slate-500 mt-1">
-                Visibility: {((weather?.visibility ?? 10000) / 1000).toFixed(1)} km
+                Visibility unavailable
                 {weather?.windGust ? ` · Gust: ${weather.windGust} km/h` : ""}
               </div>
             </div>
@@ -802,46 +670,25 @@ export default function MonitoringPage() {
               <span className={`w-1.5 h-1.5 rounded-full ${
                 activeTriggers.length > 0 ? "bg-amber-500 animate-pulse" : "bg-emerald-500"
               }`} />
-              {activeTriggers.length > 0 ? "Disruption detected" : "All clear"}
+              {activeTriggers.length > 0 ? "Configured threshold crossed" : "No verified incident assessment"}
             </div>
           </div>
         </div>
 
-        {/* ── Claim Calculation Panel ── */}
+        {/* ── Evidence limitations Panel ── */}
         <div className="p-4 bg-slate-800 text-white">
           <h3 className="font-bold text-lg mb-2 flex items-center gap-2">
-            Claim Calculation
-            <span className="text-[10px] font-normal bg-slate-700 px-2 py-0.5 rounded-full text-gray-300">Transparent</span>
+            Evidence limitations
+            <span className="text-[10px] font-normal bg-slate-700 px-2 py-0.5 rounded-full text-gray-300">Prototype</span>
           </h3>
 
           {/* Formula Steps */}
-          <div className="space-y-2 mb-3">
-            {[
-              { label: "① Daily Income", formula: `₹${worker?.avgWeeklyEarnings ?? 0} ÷ 7`, result: `₹${dailyIncome}` },
-              { label: "② Income Per Hour", formula: `₹${dailyIncome} ÷ ${hoursPerDay} hrs`, result: `₹${avgIncomePerHour}` },
-              { label: "③ Lost Hours (Disruption)", formula: "Standard disruption period", result: `${lostHours} hrs` },
-              { label: "④ Claim Amount", formula: `${lostHours} × ₹${avgIncomePerHour}`, result: `₹${calculatedClaim}`, highlight: true },
-            ].map((step) => (
-              <div key={step.label} className={`flex items-center justify-between px-3 py-2 rounded-lg ${
-                step.highlight ? "bg-emerald-500/20 border border-emerald-500/30" : "bg-slate-700/50"
-              }`}>
-                <div>
-                  <div className={`text-[10px] font-bold uppercase ${step.highlight ? "text-emerald-300" : "text-slate-400"}`}>
-                    {step.label}
-                  </div>
-                  <div className="text-xs text-slate-300 font-mono">{step.formula}</div>
-                </div>
-                <div className={`text-sm font-black ${step.highlight ? "text-emerald-400" : "text-white"}`}>
-                  {step.result}
-                </div>
-              </div>
-            ))}
-          </div>
+          <p className="text-sm text-slate-300 mb-3">No loss amount is calculated. Actual disruption duration and verified work evidence are not available. Claim submission and payouts are disabled.</p>
 
           {/* Evidence */}
           <div className="bg-slate-900 p-3 rounded-lg border border-slate-700">
             <div className="text-[10px] uppercase font-bold text-slate-400 mb-2">
-              Evidence Required
+              Local file selection - not submitted evidence
             </div>
             <input
               ref={evidenceInputRef}
@@ -854,7 +701,7 @@ export default function MonitoringPage() {
               <div className="p-2 bg-slate-800 rounded-md text-[10px] text-primary-300 flex items-center justify-between border border-slate-600">
                 <span>
                   📷 {evidence.name} ({evidence.sizeKb} KB)
-                  {evidence.source === "demo" ? " · demo" : ""}
+                   · local selection only
                 </span>
                 <button
                   onClick={() => setEvidence(null)}
@@ -869,43 +716,15 @@ export default function MonitoringPage() {
                   onClick={() => evidenceInputRef.current?.click()}
                   className="w-full border border-dashed border-slate-500 bg-slate-800 text-slate-300 py-3 rounded-lg text-xs hover:bg-slate-700 transition"
                 >
-                  + Upload Incident Screenshot
+                  + Select local screenshot (not uploaded)
                 </button>
-                <button
-                  onClick={handleUseDemoEvidence}
-                  className="w-full border border-slate-600 bg-slate-800 text-slate-300 py-2 rounded-lg text-[11px] hover:bg-slate-700 transition"
-                >
-                  Use Demo Evidence
-                </button>
+
               </div>
             )}
           </div>
 
-          {/* Submit Claim Button */}
-          <button
-            onClick={() =>
-              handleClaim({
-                type: "manual",
-                emoji: "🚨",
-                title: "Manual Report",
-                severity: "moderate",
-                value: "Self-reported",
-                eligible: true,
-              })
-            }
-            disabled={processing || !evidence}
-            className={`w-full mt-4 flex flex-col items-center justify-center py-3 rounded-xl font-bold transition-all text-white shadow-xl ${processing || !evidence ? "bg-slate-700 opacity-50 cursor-not-allowed border-none" : "bg-linear-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 border border-red-400"}`}
-          >
-            <div className="flex items-center gap-2 text-lg">
-              <span>⚡</span>{" "}
-              {processing ? "Processing..." : "File Disruption Claim"}
-            </div>
-            {!processing && (
-              <div className="text-[10px] font-medium opacity-90">
-                ✓ Disruption confirmed — queued for admin review
-              </div>
-            )}
-          </button>
+          <p className="mt-3 text-xs text-slate-300">No screenshot bytes leave this device. Selecting a file does not submit or verify evidence.</p>
+
         </div>
       </div>
 
@@ -917,11 +736,11 @@ export default function MonitoringPage() {
         </h3>
         <div className="space-y-0">
           {[
-            { step: 1, icon: "🌡️", title: "Environmental Trigger", desc: "Live APIs detect weather/AQI breach", status: activeTriggers.length > 0 ? "active" : "monitoring", color: activeTriggers.length > 0 ? "#f97316" : "#94a3b8" },
-            { step: 2, icon: "📍", title: "GPS Verification", desc: "Confirm worker location within zone", status: gpsState.status === "verified" ? "active" : "pending", color: gpsState.status === "verified" ? "#10b981" : "#94a3b8" },
-            { step: 3, icon: "🤖", title: "AI Fraud Screening", desc: "Isolation Forest ML model scores risk", status: "ready", color: "#3b82f6" },
-            { step: 4, icon: "👨‍💼", title: "Admin Review Gate", desc: "High-risk → manual | Low-risk → auto-approve", status: "ready", color: "#8b5cf6" },
-            { step: 5, icon: "💰", title: "Settlement & Payout", desc: "UPI/IMPS instant transfer within 20 seconds", status: "ready", color: "#10b981" },
+            { step: 1, icon: "🌡️", title: "Environmental Trigger", desc: "Model estimates cross configured preview rules", status: activeTriggers.length > 0 ? "active" : "monitoring", color: activeTriggers.length > 0 ? "#f97316" : "#94a3b8" },
+            { step: 2, icon: "📍", title: "Client GPS comparison", desc: "City-center reference only, not zone verification", status: gpsState.status === "verified" ? "active" : "pending", color: gpsState.status === "verified" ? "#10b981" : "#94a3b8" },
+            { step: 3, icon: "🤖", title: "Fraud screening", desc: "Not available: no validated model or evidence", status: "disabled", color: "#3b82f6" },
+            { step: 4, icon: "👨‍💼", title: "Admin Review Gate", desc: "Verified claim ingestion not configured", status: "disabled", color: "#8b5cf6" },
+            { step: 5, icon: "💰", title: "Settlement & Payout", desc: "Real payments and payouts are disabled", status: "disabled", color: "#10b981" },
           ].map((item, i) => (
             <div key={item.step} className="flex gap-3">
               {/* Connector Line */}

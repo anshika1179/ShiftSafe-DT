@@ -7,7 +7,16 @@ updates:
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    groups:
+      next-runtime:
+        patterns: ["next", "eslint-config-next"]
+      react-runtime:
+        patterns: ["react", "react-dom", "@types/react"]
+      tailwind-runtime:
+        patterns: ["tailwindcss", "@tailwindcss/postcss", "postcss"]
+      node-types:
+        patterns: ["@types/node"]
     labels:
       - "dependencies"
       - "automated"

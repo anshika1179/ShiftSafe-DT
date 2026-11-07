@@ -1,3 +1,4 @@
+import { authorizeWorker } from "@/lib/server/authorization";
 // GET /api/policies?workerId=...  — Get worker's policies
 // POST /api/policies — not used (created during registration)
 // PATCH /api/policies — update auto_renew status or cancel policy (opt-out)
@@ -37,6 +38,8 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  const auth = await authorizeWorker(req, workerId);
+  if (auth.response) return auth.response;
   const db = getDb();
   const rows = (await db
     .prepare(
@@ -89,6 +92,8 @@ export async function PATCH(req: NextRequest) {
 
     const body = await req.json();
     const { policyId, workerId, autoRenew, action } = body;
+    const auth = await authorizeWorker(req, workerId);
+    if (auth.response) return auth.response;
 
     if (!policyId || !workerId) {
       return NextResponse.json(
@@ -137,39 +142,12 @@ export async function PATCH(req: NextRequest) {
         policyId,
         status: "cancelled",
         message:
-          "Insurance coverage cancelled. Worker can re-enroll at any time.",
+          "Insurance coverage cancelled. Re-enrollment is not yet available.",
       });
     }
 
-    // re-activate action
     if (action === "reactivate") {
-      const stmt = await db.prepare(
-        "UPDATE policies SET status = ?, auto_renew = 1, end_date = NULL WHERE id = ?",
-      );
-      const result = await stmt.run("active", policyId);
-
-      if (result.changes === 0) {
-        return NextResponse.json(
-          { error: "Policy not found" },
-          { status: 404 },
-        );
-      }
-
-      const policy = (await db
-        .prepare("SELECT worker_id FROM policies WHERE id = ?")
-        .get(policyId)) as { worker_id: string } | undefined;
-      if (policy) {
-        await db
-          .prepare("UPDATE workers SET insurance_opted_out = 0 WHERE id = ?")
-          .run(policy.worker_id);
-      }
-
-      return NextResponse.json({
-        success: true,
-        policyId,
-        status: "active",
-        message: "Insurance coverage reactivated.",
-      });
+      return NextResponse.json({ error: "Reactivation requires verified payment and eligibility. Not available yet." }, { status: 503 });
     }
 
     // toggle auto-renew

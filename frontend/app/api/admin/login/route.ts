@@ -6,10 +6,13 @@ import {
 } from "@/lib/server/admin-auth";
 import { isProduction } from "@/lib/server/env";
 import {
-  consumeRateLimit,
   getClientIp,
   retryAfterSeconds,
 } from "@/lib/server/rate-limit";
+
+import { consumeAdminLoginLimit } from "@/lib/server/admin-rate-limit";
+
+export const runtime = "nodejs";
 
 function shouldUseSecureCookie(req: NextRequest): boolean {
   const host = req.nextUrl.hostname;
@@ -28,15 +31,21 @@ function shouldUseSecureCookie(req: NextRequest): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  if (req.headers.get("origin") !== req.nextUrl.origin) return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
   const ip = getClientIp(req);
-  const rate = consumeRateLimit(`admin_login:${ip}`, 8, 15 * 60 * 1000);
+  let rate;
+  try {
+    rate = await consumeAdminLoginLimit(ip);
+  } catch {
+    return NextResponse.json({ error: "Admin authentication is temporarily unavailable" }, { status: 503, headers: { "Cache-Control": "no-store" } });
+  }
   if (!rate.allowed) {
     return NextResponse.json(
       {
         error: "Too many login attempts. Please try again later.",
         retryAfterSeconds: retryAfterSeconds(rate.resetAt),
       },
-      { status: 429 },
+      { status: 429, headers: { "Retry-After": String(retryAfterSeconds(rate.resetAt)), "Cache-Control": "no-store" } },
     );
   }
 
@@ -50,10 +59,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "Invalid login input" }, { status: 400 });
+  }
+
   const email = String((body as { email?: unknown })?.email || "")
     .trim()
     .toLowerCase();
   const password = String((body as { password?: unknown })?.password || "");
+
+  if (email.length > 254 || password.length > 1024 || typeof (body as { email?: unknown })?.email !== "string" || typeof (body as { password?: unknown })?.password !== "string") {
+    return NextResponse.json({ error: "Invalid login input" }, { status: 400 });
+  }
 
   if (!email || !password) {
     return NextResponse.json(
@@ -64,11 +81,11 @@ export async function POST(req: NextRequest) {
 
   let credentialsOk = false;
   try {
-    credentialsOk = verifyAdminCredentials(email, password);
-  } catch (error) {
-    console.error("Admin credential verification failed:", error);
+    credentialsOk = await verifyAdminCredentials(email, password);
+  } catch {
+    console.error("Admin credential verification unavailable");
     return NextResponse.json(
-      { error: "Admin authentication is not configured on server" },
+      { error: "Admin authentication is temporarily unavailable" },
       { status: 503 },
     );
   }
@@ -83,15 +100,15 @@ export async function POST(req: NextRequest) {
   let token: string;
   try {
     token = createAdminSessionToken(email);
-  } catch (error) {
-    console.error("Admin session token creation failed:", error);
+  } catch {
+    console.error("Admin session token creation unavailable");
     return NextResponse.json(
       { error: "Admin session is not configured on server" },
       { status: 503 },
     );
   }
 
-  const res = NextResponse.json({ success: true });
+  const res = NextResponse.json({ success: true }, { headers: { "Cache-Control": "no-store" } });
   const secureCookie = shouldUseSecureCookie(req);
 
   res.cookies.set(ADMIN_SESSION_COOKIE, token, {
@@ -106,7 +123,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const res = NextResponse.json({ success: true });
+  if (req.headers.get("origin") !== req.nextUrl.origin) return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
+  const res = NextResponse.json({ success: true }, { headers: { "Cache-Control": "no-store" } });
   const secureCookie = shouldUseSecureCookie(req);
   res.cookies.set(ADMIN_SESSION_COOKIE, "", {
     httpOnly: true,

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveZoneContext } from "@/backend/services/triggers";
-import { normalizeIndianCityName } from "@/backend/utils/india-market";
+import { authorizeWorker } from "@/lib/server/authorization";
+import { getDb } from "@/backend/models/db";
+import { TRIGGER_RULES } from "@/backend/config/trigger-rules";
 import {
   consumeRateLimit,
   getClientIp,
@@ -15,7 +17,9 @@ interface LocationPoint {
 function parseLocation(value: unknown): LocationPoint | null {
   if (!value || typeof value !== "object") return null;
 
-  const lat = Number((value as { lat?: unknown }).lat);
+  const coords=value as {lat?:unknown;lon?:unknown};
+  if (coords.lat === null || coords.lon === null || coords.lat === "" || coords.lon === "") return null;
+  const lat = Number(coords.lat);
   const lon = Number((value as { lon?: unknown }).lon);
 
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
@@ -58,13 +62,18 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const safeZone =
-      String(body?.zone || "Andheri West")
-        .trim()
-        .slice(0, 80) || "Andheri West";
-    const safeCity = normalizeIndianCityName(body?.city || "Mumbai");
+    if (req.headers.get("origin") !== req.nextUrl.origin) return NextResponse.json({error:"Invalid GPS origin"},{status:403});
+    const auth=await authorizeWorker(req,body.workerId);
+    if (auth.response) return auth.response;
+    const consents = await getDb().prepare("SELECT gps_location FROM registration_consents WHERE worker_id = ?").get(auth.workerId);
+    if (consents?.gps_location !== 1) return NextResponse.json({error:"Recorded location consent is required"},{status:403});
+    const worker=await getDb().prepare("SELECT city, zone FROM workers WHERE id = ?").get(auth.workerId);
+    const safeCity=String(worker.city || ""),safeZone=String(worker.zone || "");
+    const timestamp=Number(body.observedAt);
+    if (!Number.isFinite(timestamp) || timestamp > Date.now()+60000 || Date.now()-timestamp >= TRIGGER_RULES.maxGpsAgeMinutes*60000) return NextResponse.json({error:"Fresh location timestamp required (less than 15 minutes old)"},{status:400});
     const workerLocation = parseLocation(body?.workerLocation);
     const rawAccuracy = Number(body?.gpsAccuracyMeters);
+    if (body.gpsAccuracyMeters === null || body.gpsAccuracyMeters === "" || !Number.isFinite(rawAccuracy) || rawAccuracy <= 0) return NextResponse.json({error:"Actual location accuracy is required"},{status:400});
 
     if (!workerLocation) {
       return NextResponse.json(
@@ -74,6 +83,7 @@ export async function POST(req: NextRequest) {
     }
 
     const zoneContext = await resolveZoneContext(safeZone, safeCity);
+    if (!zoneContext) return NextResponse.json({ verified:false, status:"manual_review", guidance:"Work area is unresolved. No location verification is available." });
     const distanceKm = haversineKm(workerLocation, {
       lat: zoneContext.lat,
       lon: zoneContext.lon,
@@ -88,7 +98,7 @@ export async function POST(req: NextRequest) {
     const mediumAccuracy = accuracyMeters <= 250;
 
     const status =
-      withinStrongZone && strongAccuracy
+      zoneContext.precision !== "city_center" && withinStrongZone && strongAccuracy
         ? "verified"
         : withinApproxZone && mediumAccuracy
           ? "approximate"
@@ -102,9 +112,9 @@ export async function POST(req: NextRequest) {
       zoneContext,
       guidance:
         status === "verified"
-          ? "GPS lock is strong. Fraud scoring can use precise distance checks."
+          ? "Client-reported GPS comparison only. This is not device or fraud verification."
           : status === "approximate"
-            ? "GPS is usable but weak. Keep screenshot evidence for faster review."
+            ? "Client-reported GPS is near the city center. A precise work-zone reference is unavailable; no verified-zone claim is made."
             : "GPS signal is weak or far from mapped zone. Claim may go to manual review.",
     });
   } catch {

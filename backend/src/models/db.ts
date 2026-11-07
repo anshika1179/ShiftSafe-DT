@@ -1,6 +1,7 @@
 import { neon } from "@neondatabase/serverless";
 
 interface DbWrapper {
+  batch(statements: { query: string; params: any[] }[]): Promise<void>;
   run(query: string, ...params: any[]): Promise<{ changes: number }>;
   get(query: string, ...params: any[]): Promise<any>;
   all(query: string, ...params: any[]): Promise<any[]>;
@@ -22,9 +23,10 @@ function shouldSeedDemoData(): boolean {
   const explicit = String(process.env.SEED_DEMO_DATA || "")
     .trim()
     .toLowerCase();
+  if (process.env.NODE_ENV === "production") return false;
   if (explicit === "true") return true;
   if (explicit === "false") return false;
-  return process.env.NODE_ENV !== "production";
+  return false;
 }
 
 function replaceSqliteDateFns(query: string): string {
@@ -176,7 +178,7 @@ async function wait(ms: number): Promise<void> {
 }
 
 async function createNeonDb(databaseUrl: string): Promise<DbWrapper> {
-  const sql = neon(databaseUrl);
+  const sql = neon(databaseUrl, { fullResults: true });
   const maxRetries = parsePositiveInt(process.env.NEON_QUERY_RETRIES, 2);
   const baseRetryDelayMs = parsePositiveInt(
     process.env.NEON_QUERY_RETRY_DELAY_MS,
@@ -191,7 +193,7 @@ async function createNeonDb(databaseUrl: string): Promise<DbWrapper> {
       try {
         return await sql.query(text, params);
       } catch (error) {
-        if (attempt >= maxRetries || !isTransientNetworkError(error)) {
+        if (!/^\s*SELECT\b/i.test(text) || attempt >= maxRetries || !isTransientNetworkError(error)) {
           throw error;
         }
         const delayMs = baseRetryDelayMs * 2 ** attempt;
@@ -215,6 +217,9 @@ async function createNeonDb(databaseUrl: string): Promise<DbWrapper> {
   };
 
   return {
+    async batch(statements: { query: string; params: any[] }[]) {
+      await sql.transaction(statements.map(({ query, params }) => sql.query(toNeonSql(query), params)));
+    },
     async run(query: string, ...params: any[]) {
       const result = await execute(query, params);
       return { changes: toRowCount(result) };
@@ -278,13 +283,23 @@ async function createSqliteDb(): Promise<DbWrapper> {
 
   const dataDir = join(process.cwd(), ".data");
   mkdirSync(dataDir, { recursive: true });
-  const dbPath = join(dataDir, "shiftsafe.db");
+  const dbPath = process.env.SQLITE_DB_PATH || join(dataDir, "shiftsafe.db");
 
   const sqlite = new DatabaseCtor(dbPath);
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
 
   return {
+    async batch(statements: { query: string; params: any[] }[]) {
+      sqlite.exec("BEGIN IMMEDIATE");
+      try {
+        for (const { query, params } of statements) sqlite.prepare(query).run(...params);
+        sqlite.exec("COMMIT");
+      } catch (error) {
+        sqlite.exec("ROLLBACK");
+        throw error;
+      }
+    },
     async run(query: string, ...params: any[]) {
       const result = sqlite.prepare(query).run(...params);
       return { changes: Number(result.changes ?? 0) };
@@ -319,6 +334,7 @@ async function createBaseDb(): Promise<DbWrapper> {
     _dbProvider = "neon";
     return createNeonDb(databaseUrl);
   }
+  if (process.env.NODE_ENV === "production") throw new Error("DATABASE_URL is required in production");
   _dbProvider = "sqlite";
   return createSqliteDb();
 }
@@ -328,7 +344,7 @@ export function getDbProvider(): "neon" | "sqlite" | "unknown" {
 }
 
 function canFallbackToSqlite(error: unknown): boolean {
-  return _dbProvider === "neon" && isTransientNetworkError(error);
+  return process.env.NODE_ENV !== "production" && process.env.ALLOW_SQLITE_FAILOVER === "true" && _dbProvider === "neon" && isTransientNetworkError(error);
 }
 
 async function switchToSqliteFallback(): Promise<DbWrapper> {
@@ -394,6 +410,7 @@ async function initializeIfNeeded(baseDb: DbWrapper): Promise<void> {
 export function getDb(): DbWrapper {
   if (!_dbWrapper) {
     _dbWrapper = {
+      async batch(statements) { return withDbFallback((db) => db.batch(statements)); },
       async run(query: string, ...params: any[]) {
         return withDbFallback((db) => db.run(query, ...params));
       },
@@ -425,10 +442,129 @@ export async function initDb() {
 
 async function initSchema(db: any) {
   await db.exec(`
+    CREATE TABLE IF NOT EXISTS admin_credentials (
+      email TEXT PRIMARY KEY,
+      config_id TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      migrated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS admin_login_limits (
+      key TEXT PRIMARY KEY,
+      attempts INTEGER NOT NULL,
+      reset_at BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS admin_login_limits_expiry ON admin_login_limits(reset_at);
+    CREATE TABLE IF NOT EXISTS sandbox_policies (
+      id TEXT PRIMARY KEY, worker_id TEXT NOT NULL, quote_hash TEXT NOT NULL,
+      quote_json TEXT NOT NULL, premium_simulated REAL NOT NULL, weekly_limit REAL NOT NULL,
+      starts_at BIGINT NOT NULL, ends_at BIGINT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'sandbox_active', created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(worker_id,quote_hash)
+    );
+    CREATE TABLE IF NOT EXISTS sandbox_events (
+      id TEXT PRIMARY KEY, worker_id TEXT NOT NULL, policy_id TEXT NOT NULL,
+      source TEXT NOT NULL, peril TEXT NOT NULL, observed_at BIGINT NOT NULL,
+      evidence_json TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(policy_id,source,peril,observed_at)
+    );
+    CREATE TABLE IF NOT EXISTS sandbox_claims (
+      id TEXT PRIMARY KEY, worker_id TEXT NOT NULL, policy_id TEXT NOT NULL,
+      event_id TEXT NOT NULL UNIQUE, status TEXT NOT NULL, review_json TEXT NOT NULL,
+      amount_simulated REAL NOT NULL DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS sandbox_receipts (
+      id TEXT PRIMARY KEY, worker_id TEXT NOT NULL, policy_id TEXT NOT NULL,
+      claim_id TEXT NOT NULL UNIQUE, amount_simulated REAL NOT NULL,
+      label TEXT NOT NULL DEFAULT 'SIMULATED - NO MONEY TRANSFERRED',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS quote_snapshots (
+      worker_id TEXT PRIMARY KEY,
+      input_fingerprint TEXT NOT NULL,
+      result_json TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS worker_journeys (
+      worker_id TEXT PRIMARY KEY,
+      step TEXT NOT NULL DEFAULT 'profile',
+      eligibility_json TEXT,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS onboarding_drafts (
+      proof_id TEXT PRIMARY KEY,
+      draft_json TEXT NOT NULL,
+      expires_at BIGINT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS phone_trial_usage (
+      id TEXT PRIMARY KEY,
+      sends INTEGER NOT NULL DEFAULT 0,
+      last_send_at BIGINT NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS phone_verification_challenges (
+      id TEXT PRIMARY KEY,
+      owner_key TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      expires_at BIGINT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      consumed INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS contact_phone_proofs (
+      id TEXT PRIMARY KEY,
+      owner_key TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      expires_at BIGINT NOT NULL,
+      consumed INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS worker_identities (
+      provider TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      worker_id TEXT NOT NULL UNIQUE,
+      PRIMARY KEY (provider, subject)
+    );
+    CREATE TABLE IF NOT EXISTS email_onboarding_challenges (
+      id TEXT PRIMARY KEY,
+      subject TEXT NOT NULL,
+      email TEXT NOT NULL,
+      name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      expires_at BIGINT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      state TEXT NOT NULL DEFAULT 'pending'
+    );
+    CREATE TABLE IF NOT EXISTS email_send_usage (
+      id TEXT PRIMARY KEY,
+      sends INTEGER NOT NULL DEFAULT 0,
+      last_send_at BIGINT NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS google_registration_proofs (
+      id TEXT PRIMARY KEY,
+      subject TEXT NOT NULL,
+      email TEXT NOT NULL,
+      expires_at BIGINT NOT NULL,
+      consumed INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS worker_contacts (
+      worker_id TEXT PRIMARY KEY,
+      phone TEXT NOT NULL,
+      phone_verified INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS registration_proofs (
+      id TEXT PRIMARY KEY,
+      phone TEXT NOT NULL,
+      expires_at BIGINT NOT NULL,
+      consumed INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS registration_consents (
+      worker_id TEXT PRIMARY KEY,
+      gps_location INTEGER NOT NULL,
+      bank_upi INTEGER NOT NULL,
+      platform_activity INTEGER NOT NULL,
+      recorded_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
     CREATE TABLE IF NOT EXISTS workers (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      phone TEXT NOT NULL UNIQUE,
+      phone TEXT,
       email TEXT,
       platform TEXT NOT NULL,
       city TEXT NOT NULL,
@@ -618,6 +754,20 @@ async function initSchema(db: any) {
       FOREIGN KEY (worker_id) REFERENCES workers(id)
     );
 
+    CREATE TABLE IF NOT EXISTS service_request_history (
+      id TEXT PRIMARY KEY,
+      request_id TEXT NOT NULL,
+      actor_email TEXT NOT NULL,
+      revision BIGINT NOT NULL,
+      old_status TEXT NOT NULL,
+      new_status TEXT NOT NULL,
+      old_notes TEXT,
+      new_notes TEXT,
+      changed_at TEXT NOT NULL,
+      UNIQUE(request_id, revision),
+      FOREIGN KEY (request_id) REFERENCES service_requests(id)
+    );
+    CREATE INDEX IF NOT EXISTS service_request_history_request ON service_request_history(request_id, revision);
     CREATE TABLE IF NOT EXISTS risk_bonuses (
       id TEXT PRIMARY KEY,
       worker_id TEXT NOT NULL,
@@ -646,12 +796,26 @@ async function initSchema(db: any) {
     );
   `);
 
+  await migrateLegacyPhoneConstraint(db);
+  await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS workers_verified_phone_unique ON workers(phone) WHERE phone IS NOT NULL");
   await ensureWorkerPayoutColumns(db);
   await ensureServiceRequestAiColumns(db);
 }
 
+async function migrateLegacyPhoneConstraint(db: any) {
+  if (_dbProvider === "neon") {
+    await db.exec("ALTER TABLE workers ALTER COLUMN phone DROP NOT NULL");
+  } else {
+    const schema = await db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'workers'").get();
+    if (/phone TEXT NOT NULL UNIQUE/i.test(schema?.sql || "")) {
+      throw new Error("Legacy SQLite schema requires an offline migration; use a fresh development database for Google sign-in");
+    }
+  }
+}
+
 async function ensureWorkerPayoutColumns(db: any) {
   const migrationStatements = [
+    "ALTER TABLE google_registration_proofs ADD COLUMN email_link_verified INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE workers ADD COLUMN payout_method TEXT DEFAULT 'upi'",
     "ALTER TABLE workers ADD COLUMN upi_id TEXT",
     "ALTER TABLE workers ADD COLUMN bank_account TEXT",
@@ -661,14 +825,16 @@ async function ensureWorkerPayoutColumns(db: any) {
   for (const statement of migrationStatements) {
     try {
       await db.exec(statement);
-    } catch {
-      // Column already exists or dialect-specific duplicate-column error.
+    } catch (error) {
+      if (!/already exists|duplicate column/i.test(String((error as Error).message))) throw error;
     }
   }
 }
 
 async function ensureServiceRequestAiColumns(db: any) {
   const migrationStatements = [
+    "ALTER TABLE service_requests ADD COLUMN history_revision BIGINT NOT NULL DEFAULT 0",
+    "ALTER TABLE service_requests ADD COLUMN last_change_id TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE service_requests ADD COLUMN ai_metadata TEXT",
     "ALTER TABLE service_requests ADD COLUMN ai_model_version TEXT",
   ];
@@ -676,8 +842,8 @@ async function ensureServiceRequestAiColumns(db: any) {
   for (const statement of migrationStatements) {
     try {
       await db.exec(statement);
-    } catch {
-      // Column already exists or dialect-specific duplicate-column error.
+    } catch (error) {
+      if (!/already exists|duplicate column/i.test(String((error as Error).message))) throw error;
     }
   }
 }
